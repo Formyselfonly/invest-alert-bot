@@ -133,7 +133,8 @@ class Coordinator:
             if supports_touch(monitor.interval):
                 touch_lines.append(
                     f"*{metrics.interval_label}*  "
-                    f"200MA `{format_pct(metrics.touch_ma_pct)}`",
+                    f"200MA `{format_pct(metrics.touch_ma_pct)}` · "
+                    f"价格在200MA *{metrics.touch_ma_side}*",
                 )
 
         lines = [

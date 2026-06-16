@@ -18,6 +18,16 @@ def format_pct(value: float) -> str:
     return f"{value:.2f}%"
 
 
+def format_ma200_position(price: float, ma_200: float) -> str:
+    if price != price or ma_200 != ma_200 or price <= 0 or ma_200 <= 0:
+        return "—"
+    if price > ma_200:
+        return "上方"
+    if price < ma_200:
+        return "下方"
+    return "持平"
+
+
 @dataclass(frozen=True)
 class MonitorMetrics:
     symbol: str
@@ -25,6 +35,7 @@ class MonitorMetrics:
     interval_label: str
     cluster_pct: float
     touch_ma_pct: float
+    touch_ma_side: str
 
     @property
     def cluster_near(self) -> bool:
@@ -48,4 +59,5 @@ def build_metrics(
         interval_label=label,
         cluster_pct=cluster_spread_ratio(indicators, price) * 100,
         touch_ma_pct=touch_ratio(price, indicators.ma_200) * 100,
+        touch_ma_side=format_ma200_position(price, indicators.ma_200),
     )

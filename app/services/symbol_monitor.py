@@ -22,6 +22,7 @@ from app.services.status_format import (
     INTERVAL_LABELS,
     MonitorMetrics,
     build_metrics,
+    format_ma200_position,
     format_pct,
 )
 
@@ -111,9 +112,11 @@ class SymbolMonitor:
         ]
         if supports_touch(self.interval):
             dist_ma = touch_ratio(self.current_price, ind.ma_200) * 100
+            side = format_ma200_position(self.current_price, ind.ma_200)
             lines.append(
                 f"   200MA `${ind.ma_200:,.2f}` | "
-                f"距200MA `{format_pct(dist_ma)}`",
+                f"距200MA `{format_pct(dist_ma)}` · "
+                f"价格在200MA *{side}*",
             )
         return "\n".join(lines)
 
@@ -157,6 +160,10 @@ class SymbolMonitor:
                 pct = ratio * 100
                 touch_pct = self.touch_threshold * 100
                 label = ALERT_TYPE_LABELS[alert_type]
+                side = format_ma200_position(
+                    self.current_price,
+                    self.indicators.ma_200,
+                )
                 touch_events.append(
                     AlertEvent(
                         symbol=self.symbol,
@@ -165,7 +172,8 @@ class SymbolMonitor:
                         price=self.current_price,
                         detail=(
                             f"距 {label} {pct:.2f}% "
-                            f"(阈值 {touch_pct:.1f}%)"
+                            f"(阈值 {touch_pct:.1f}%) · "
+                            f"价格在200MA {side}"
                         ),
                         triggered_at=now,
                     ),
