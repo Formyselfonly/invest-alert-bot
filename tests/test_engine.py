@@ -78,7 +78,7 @@ def test_cluster_alert_not_triggered_when_spread_above_threshold() -> None:
     assert triggered is False
 
 
-def test_touch_alert_200ma_independent_from_200ema() -> None:
+def test_touch_alert_only_200ma() -> None:
     indicators = Indicators(
         ma_20=100.0,
         ema_20=100.0,
@@ -87,12 +87,11 @@ def test_touch_alert_200ma_independent_from_200ema() -> None:
         ma_120=100.0,
         ema_120=100.0,
         ma_200=100.5,
-        ema_200=120.0,
+        ema_200=100.0,
     )
     alerts = check_touch_alerts(indicators, 100.0, 0.008)
-    types = {a[0] for a in alerts}
-    assert AlertType.TOUCH_200_MA in types
-    assert AlertType.TOUCH_200_EMA not in types
+    assert len(alerts) == 1
+    assert alerts[0][0] == AlertType.TOUCH_200_MA
 
 
 def test_cluster_spread_ratio() -> None:
@@ -114,4 +113,6 @@ def test_interval_support_flags() -> None:
     assert supports_cluster("4h") is True
     assert supports_cluster("1d") is True
     assert supports_cluster("1wk") is True
+    assert supports_touch("4h") is False
+    assert supports_touch("1d") is True
     assert supports_touch("1wk") is True

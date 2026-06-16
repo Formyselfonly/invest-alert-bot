@@ -15,11 +15,15 @@ from app.schemas.alert import AlertEvent
 from app.schemas.config import AppConfig, SymbolConfig
 from app.schemas.market import DataSource, Kline, Tick
 from app.services.alert_manager import AlertManager
-from app.services.engine import normalize_interval
-from app.services.status_format import MonitorMetrics
+from app.services.engine import normalize_interval, supports_touch
+from app.services.status_format import MonitorMetrics, format_pct
 from app.services.symbol_monitor import INTERVAL_ORDER, SymbolMonitor
 
 logger = logging.getLogger(__name__)
+
+_EQUITY_SOURCES = frozenset({DataSource.YFINANCE, DataSource.NASDAQ})
+
+STATUS_SYMBOL_SEPARATOR = "─────────────────"
 
 
 class Coordinator:
@@ -61,6 +65,16 @@ class Coordinator:
                 return symbol
         return None
 
+    def _active_symbols_in_config_order(self) -> list[str]:
+        active = {sym for sym, _ in self._monitors}
+        ordered: list[str] = []
+        seen: set[str] = set()
+        for cfg in self._config.symbols:
+            if cfg.symbol in active and cfg.symbol not in seen:
+                ordered.append(cfg.symbol)
+                seen.add(cfg.symbol)
+        return ordered
+
     def format_status(self, symbol_query: str | None = None) -> str:
         if symbol_query:
             symbol = self._resolve_symbol(symbol_query)
@@ -75,17 +89,18 @@ class Coordinator:
 
         total = self._configured_total()
         active = len(self._monitors)
-        symbols = sorted({sym for sym, _ in self._monitors})
+        symbols = self._active_symbols_in_config_order()
 
         lines = [
             f"📡 *监控状态*（{active}/{total} 活跃）",
             "",
         ]
-        for symbol in symbols:
+        for index, symbol in enumerate(symbols):
+            if index > 0:
+                lines.append(STATUS_SYMBOL_SEPARATOR)
             lines.append(self._format_symbol_detail(symbol))
-            lines.append("")
 
-        lines.append("`/status BTC` 单标的 · `/clear` 清屏")
+        lines.extend(["", "`/status BTC` 单标的 · `/clear` 清屏"])
         return "\n".join(lines).rstrip()
 
     def _format_symbol_detail(self, symbol: str) -> str:
@@ -113,28 +128,29 @@ class Coordinator:
                 continue
             cluster_lines.append(
                 f"*{metrics.interval_label}*  "
-                f"`{metrics.cluster_pct:.2f}%`",
+                f"`{format_pct(metrics.cluster_pct)}`",
             )
-            touch_lines.append(
-                f"*{metrics.interval_label}*  "
-                f"200MA `{metrics.touch_ma_pct:.2f}%` · "
-                f"200EMA `{metrics.touch_ema_pct:.2f}%`",
-            )
+            if supports_touch(monitor.interval):
+                touch_lines.append(
+                    f"*{metrics.interval_label}*  "
+                    f"200MA `{format_pct(metrics.touch_ma_pct)}`",
+                )
 
-        return (
-            f"*{symbol}*  现价 {spot_text}\n"
-            f"📊 *均线密集*\n"
-            + "\n".join(cluster_lines)
-            + "\n🎯 *200MA / 200EMA*\n"
-            + "\n".join(touch_lines)
-        )
+        lines = [
+            f"*{symbol}*  现价 {spot_text}",
+            "📊 *均线密集*（20/60/120 MA+EMA）",
+            *cluster_lines,
+        ]
+        if touch_lines:
+            lines.extend(["🎯 *200MA 触碰*（1D / 1W）", *touch_lines])
+        return "\n".join(lines)
 
     async def start(self) -> None:
         self._session = aiohttp.ClientSession()
         try:
             await self._bootstrap_monitors()
             await self._start_binance_streams()
-            await self._start_yfinance_pollers()
+            await self._start_equity_pollers()
             await self._notifier.send_startup_message(
                 self.monitor_count,
                 self._skipped_monitors,
@@ -217,12 +233,14 @@ class Coordinator:
                 interval,
                 market=symbol_cfg.market,
             )
+        if symbol_cfg.source not in _EQUITY_SOURCES:
+            raise ValueError(f"Unsupported data source: {symbol_cfg.source}")
         poller = YahooFinancePoller(
             symbol=symbol_cfg.symbol,
             yf_ticker=symbol_cfg.yf_ticker,
             interval=interval,
             poll_seconds=self._config.polling.yfinance_interval_seconds,
-            on_update=self._handle_yfinance_update,
+            on_update=self._handle_equity_update,
         )
         return await asyncio.to_thread(poller.fetch_history, 250)
 
@@ -270,9 +288,9 @@ class Coordinator:
     def _has_active_monitor(self, symbol: str) -> bool:
         return any(key[0] == symbol for key in self._monitors)
 
-    async def _start_yfinance_pollers(self) -> None:
+    async def _start_equity_pollers(self) -> None:
         for symbol_cfg in self._config.symbols:
-            if symbol_cfg.source != DataSource.YFINANCE:
+            if symbol_cfg.source not in _EQUITY_SOURCES:
                 continue
             for interval in symbol_cfg.intervals:
                 if (symbol_cfg.symbol, interval) not in self._monitors:
@@ -282,7 +300,7 @@ class Coordinator:
                     yf_ticker=symbol_cfg.yf_ticker,
                     interval=interval,
                     poll_seconds=self._config.polling.yfinance_interval_seconds,
-                    on_update=self._handle_yfinance_update,
+                    on_update=self._handle_equity_update,
                 )
                 self._yf_pollers.append(poller)
                 await poller.start()
@@ -332,7 +350,7 @@ class Coordinator:
         monitor.on_kline_closed(kline)
         await monitor.on_price(monitor.current_price)
 
-    async def _handle_yfinance_update(
+    async def _handle_equity_update(
         self,
         symbol: str,
         interval: str,

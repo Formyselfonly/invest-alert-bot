@@ -1,4 +1,4 @@
-"""Yahoo Finance polling provider for traditional assets."""
+"""Equity OHLCV via Yahoo Finance (NASDAQ / NYSE listed symbols)."""
 
 from __future__ import annotations
 
@@ -25,6 +25,27 @@ YF_INTERVAL_MAP = {
     "1w": "1wk",
     "1wk": "1wk",
 }
+
+
+def _clean_ohlcv(df: pd.DataFrame) -> pd.DataFrame:
+    """Drop incomplete bars (Yahoo often appends NaN Close for open sessions)."""
+    required = ["Open", "High", "Low", "Close"]
+    cleaned = df.dropna(subset=required)
+    return cleaned.loc[cleaned["Close"] > 0]
+
+
+def _fetch_live_price(ticker: yf.Ticker, fallback: float) -> float:
+    try:
+        fast = ticker.fast_info
+        for key in ("lastPrice", "regularMarketPrice"):
+            raw = fast.get(key) if hasattr(fast, "get") else None
+            if raw is not None:
+                price = float(raw)
+                if price > 0:
+                    return price
+    except Exception:
+        logger.debug("Live price unavailable for %s", ticker.ticker)
+    return fallback
 
 
 def _resample_to_interval(df: pd.DataFrame, interval: str) -> pd.DataFrame:
@@ -75,7 +96,7 @@ class YahooFinancePoller:
         self._running = True
         self._task = asyncio.create_task(self._poll_loop())
         logger.info(
-            "Yahoo Finance poller started: %s %s every %ss",
+            "Equity poller started: %s %s every %ss",
             self.symbol,
             self.interval,
             self.poll_seconds,
@@ -101,12 +122,15 @@ class YahooFinancePoller:
         if df.empty:
             return []
 
+        df = _clean_ohlcv(df)
+
         if df.index.tz is None:
             df.index = df.index.tz_localize("UTC")
         else:
             df.index = df.index.tz_convert("UTC")
 
         df = _resample_to_interval(df, self.interval)
+        df = _clean_ohlcv(df)
         df = df.tail(limit)
 
         klines: list[Kline] = []
@@ -129,7 +153,12 @@ class YahooFinancePoller:
             try:
                 klines = await asyncio.to_thread(self.fetch_history, 250)
                 if klines:
-                    price = klines[-1].close
+                    ticker = yf.Ticker(self._yf_ticker)
+                    price = await asyncio.to_thread(
+                        _fetch_live_price,
+                        ticker,
+                        klines[-1].close,
+                    )
                     await self._on_update(
                         self.symbol,
                         self.interval,

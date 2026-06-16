@@ -96,28 +96,28 @@ telegram:
 symbols:
   - symbol: BTC/USDT
     source: binance
-    market: spot
-    intervals: [4h, 1d]
+    market: futures
+    intervals: [4h, 1d, 1wk]
 
-  - symbol: ETH/USDT
-    source: binance
-    market: spot
-    intervals: [4h, 1d]
+  - symbol: MSFT
+    source: nasdaq
+    intervals: [4h, 1d, 1wk]
 
-  - symbol: MSTR
-    source: yfinance
+  - symbol: XAU
+    source: nasdaq
+    ticker: GC=F
     intervals: [4h, 1d, 1wk]
 
 thresholds:
   cluster: 0.008    # 密集告警：0.8%
-  touch: 0.008      # 触碰告警：0.8%
+  touch: 0.012      # 200MA 触底：1.2%
 
 alert:
   cooldown_seconds: 3600
   dedupe_window_seconds: 60
 
 polling:
-  yfinance_interval_seconds: 30
+  yfinance_interval_seconds: 300
 
 logging:
   level: INFO
@@ -174,9 +174,8 @@ TELEGRAM_CHAT_ID=your_chat_id_here
 
 ```
 职责：
-  - 定时轮询（默认 30s）获取最新价格与 K 线
-  - 适配 yfinance symbol 格式（MSTR, AAPL 等）
-  - 非交易时段静默，避免无效告警
+  - 定时轮询（默认 300s）获取最新价格与 K 线
+  - 用于 `source: nasdaq` / `yfinance`（美股、黄金等）
 ```
 
 ---
@@ -380,7 +379,7 @@ Week 4 ─ Deploy
 | 风险 | 影响 | 缓解措施 |
 |------|------|----------|
 | Binance WebSocket 频繁断线 | 告警延迟或丢失 | 指数退避重连 + REST 补数据 |
-| yfinance 限流 / 延迟 | 美股告警不及时 | 30s 轮询 + 非交易时段静默 |
+| yfinance 限流 / 延迟 | 美股告警不及时 | 300s 轮询 |
 | Telegram API 限流 | 推送失败 | 消息队列 + 重试 + 速率控制 |
 | 指标计算精度 | 误报 / 漏报 | 与 TradingView 对比验证 |
 | 内存泄漏（长期运行） | 进程崩溃 | 定期重启策略 + 内存监控 |

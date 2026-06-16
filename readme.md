@@ -2,7 +2,7 @@
 
 一个基于 Python 的高频、低延迟行情监控与告警系统，专注于**均线簇密集度检测**与**关键均线触碰提醒**。满足条件时通过 Telegram 即时推送，辅助交易决策。
 
-> 当前版本：**v0.1.0** — 核心告警链路已实现（Binance 实时 + Telegram 推送）
+> 当前版本：**v0.1.0** — 混合数据源（Binance 合约 + Nasdaq/Yahoo）+ Telegram 推送
 
 ---
 
@@ -22,23 +22,47 @@
 
 | 功能 | 说明 | 状态 |
 |------|------|------|
-| **均线密集告警** | 20/60/120 的 MA 与 EMA（6 根），4H / 1D / 1W spread ≤ 0.8% | ✅ |
-| **关键位触碰告警** | 200MA / 200EMA，4H / 1D / 1W，距离 ≤ 0.8% | ✅ |
-| **Telegram 交互** | 摘要 `/status`、详情 `/status BTC`、清屏 | ✅ |
-| **Binance 合约** | 全部标的走 U 本位合约（BTC、MSFT/USDT 等），WebSocket 实时 | ✅ |
+| **均线密集告警** | 20/60/120 的 MA 与 EMA（6 根），**4H / 1D / 1W** spread ≤ 0.8% | ✅ |
+| **200MA 触底告警** | 仅 **1D / 1W**，只看 **200MA**（不看 200EMA），距离 ≤ 1.2% | ✅ |
+| **Telegram 交互** | 全部 `/status`、单标的 `/status BTC`、清屏 | ✅ |
+| **Binance 合约** | 加密货币（BTC、ETH 等）WebSocket 实时 | ✅ |
+| **Nasdaq / Yahoo** | 美股、黄金（GC=F）历史 K 线 + 轮询现价 | ✅ |
 | **Telegram 推送** | 触碰即触发，冷却 + 防抖 | ✅ |
 | **动态配置** | `config.yaml` 管理交易对 | ✅ |
 | **数据库** | 无（v1 纯内存，重启后冷却重置） | — |
 
 ---
 
-## 技术栈
+## 监控规则归纳
+
+每个标的在 **3 个周期**上独立监控；告警按 `标的 + 周期 + 类型` 分别冷却。
+
+**以 BTC/USDT 为例：**
+
+| 检测项 | 4H | 1D | 1W |
+|--------|----|----|-----|
+| 均线密集（20/60/120 MA+EMA 六线 spread ≤ 0.8%） | ✅ | ✅ | ✅ |
+| 200MA 触底（距 200MA ≤ 1.2%） | — | ✅ | ✅ |
+
+> **4H 不做 200MA 触底**；**不看 200EMA**。
+
+**当前 11 个标的**（详见 `config.yaml`）：
+
+| 类别 | 标的 | 数据源 |
+|------|------|--------|
+| 加密货币 | BTC、ETH、SOL、BNB、HYPE | Binance 合约 |
+| 美股 | MSFT、NVDA、MSTR、GOOGL、CRCL | `source: nasdaq`（Yahoo） |
+| 黄金 | XAU（ticker: GC=F） | `source: nasdaq`（Yahoo） |
+
+启动时需 **≥200 根 K 线** 才启用该周期；不足则跳过（如 HYPE 1W、CRCL 1W）。正常约 **31/33** 活跃。
+
+---
 
 | 层级 | 技术 |
 |------|------|
 | 语言 | Python 3.12+ |
 | 包管理 | [uv](https://docs.astral.sh/uv/) |
-| 行情 | Binance U 本位合约 WebSocket + REST |
+| 行情 | Binance U 本位合约（加密）+ Yahoo Finance（美股/黄金） |
 | 指标计算 | Pandas |
 | 告警推送 | Telegram Bot API |
 | 运行时 | Asyncio |
@@ -180,8 +204,8 @@ flowchart TB
         R --> P
     end
 
-    subgraph Yahoo["Yahoo Finance（source: yfinance）"]
-        POLL["每 30s 轮询"] --> U["update_klines()"]
+    subgraph Yahoo["Yahoo Finance（source: nasdaq / yfinance）"]
+        POLL["每 300s 轮询"] --> U["update_klines()"]
         U --> R2["重算 MA/EMA"]
         R2 --> P2["on_price(最新 close)"]
     end
@@ -200,10 +224,11 @@ flowchart TB
 
 | 配置 `source` | 历史 K 线 | 实时价格 | 说明 |
 |---------------|-----------|----------|------|
-| `binance` + `market: futures` | Binance 合约 REST | Binance 合约 WS | **默认**；`MSFT/USDT` → `MSFTUSDT` |
+| `binance` + `market: futures` | Binance 合约 REST | Binance 合约 WS | 加密货币，如 `BTC/USDT` |
+| `nasdaq` | Yahoo Finance | 轮询最新 close | 美股代码如 `MSFT`；黄金 `XAU` + `ticker: GC=F` |
+| `yfinance` | 同 nasdaq | 同 nasdaq | 与 `nasdaq` 等价，保留兼容 |
 
-> 股票/黄金等使用 Binance **代币化合约**（如 MSFTUSDT、XAUUSDT），与加密同一套实时链路。  
-> 新上线合约若历史 K 线不足 200 根，对应周期会在启动时跳过（日志可见）。
+> 历史 K 线不足 200 根的周期会在启动时跳过（日志可见）。
 
 ---
 
@@ -224,8 +249,9 @@ flowchart LR
     DF --> EMA120["EMA 120"]
     DF --> MA200["MA 200"]
     DF --> EMA200["EMA 200"]
-    MA20 & EMA20 & MA60 & EMA60 & MA120 & EMA120 --> IND["Indicators"]
-    MA200 & EMA200 --> IND
+    MA20 & EMA20 & MA60 & EMA60 & MA120 & EMA120 --> IND["Indicators<br/>密集用 6 线"]
+    MA200 --> IND
+    EMA200 -.->|不参与告警| IND
 ```
 
 #### 告警判定（每次价格更新触发）
@@ -245,16 +271,13 @@ flowchart TB
         COK -->|是| CE["AlertType.CLUSTER"]
     end
 
-    subgraph Touch["关键位触碰告警（4H / 1D / 1W）"]
+    subgraph Touch["200MA 触底告警（仅 1D / 1W）"]
         TMA["touch_ma = |price - 200MA| / price"]
-        TEMA["touch_ema = |price - 200EMA| / price"]
-        TMA --> TOK1{"≤ 0.8%?"}
-        TEMA --> TOK2{"≤ 0.8%?"}
+        TMA --> TOK1{"≤ 1.2%?"}
         TOK1 -->|是| AE1["AlertType.TOUCH_200_MA"]
-        TOK2 -->|是| AE2["AlertType.TOUCH_200_EMA"]
     end
 
-    CE & AE1 & AE2 --> AM["AlertManager.should_send()"]
+    CE & AE1 --> AM["AlertManager.should_send()"]
     AM --> COOL{"距上次同类型告警<br/>≥ cooldown(1h)?"}
     COOL -->|否| END
     COOL -->|是| DEDUP{"60s 防抖窗口?"}
@@ -273,11 +296,11 @@ spread = (max(6根均线) - min(6根均线)) / current_price
 触发条件：spread ≤ thresholds.cluster（默认 0.8%）
 ```
 
-**关键均线触碰**（200MA 与 200EMA 独立检测）：
+**200MA 触底**（仅 1D / 1W，不看 4H，不看 200EMA）：
 
 ```
-touch = abs(current_price - 200MA_or_EMA) / current_price
-触发条件：touch ≤ thresholds.touch（默认 0.8%）
+touch = abs(current_price - 200MA) / current_price
+触发条件：touch ≤ thresholds.touch（默认 1.2%）
 ```
 
 | 设计要点 | 说明 |
@@ -372,18 +395,26 @@ uv sync
 
 ```yaml
 symbols:
+  # 加密货币 — Binance 合约
   - symbol: BTC/USDT
     source: binance
+    market: futures
     intervals: [4h, 1d, 1wk]
 
-  - symbol: ETH/USDT
-    source: binance
+  # 美股 — Nasdaq（Yahoo Finance）
+  - symbol: MSFT
+    source: nasdaq
     intervals: [4h, 1d, 1wk]
 
-  # 美股示例（轮询，非实时）
-  # - symbol: MSTR
-  #   source: yfinance
-  #   intervals: [4h, 1d, 1wk]
+  # 黄金 — COMEX 期货
+  - symbol: XAU
+    source: nasdaq
+    ticker: GC=F
+    intervals: [4h, 1d, 1wk]
+
+thresholds:
+  cluster: 0.008   # 密集 0.8%
+  touch: 0.012     # 200MA 触底 1.2%
 ```
 
 ---
@@ -394,7 +425,7 @@ symbols:
 
 只需要跑**一个 Python 进程**，它同时做两件事：
 
-1. **监控行情**（Binance WebSocket + 指标计算）
+1. **监控行情**（Binance WebSocket + Yahoo 轮询 + 指标计算）
 2. **Telegram Bot**（推送告警 + 响应 `/start` 等命令）
 
 ```bash
@@ -433,7 +464,7 @@ uv run python -m app.main
 | `/clear` | 清屏（告警推送不删） |
 | `/help` | 帮助 |
 
-**告警推送**也分两类标题：`📊 【均线密集】` 与 `🎯 【200MA/EMA 触碰】`，不会混在一条里。
+**告警推送**分两类标题：`📊 【均线密集】` 与 `🎯 【200MA 触碰】`（仅 1D/1W）。
 
 > 若更新后 `/` 菜单没出现：重启 `app.main`，并关闭 Telegram 对话重新打开。
 
@@ -489,7 +520,7 @@ uv run ruff check app tests
 | `TELEGRAM_CHAT_ID` | `.env` | 你的 Telegram 用户 ID |
 | `symbols` | `config.yaml` | 监控标的列表 |
 | `thresholds.cluster` | `config.yaml` | 密集阈值，默认 0.008 (0.8%) |
-| `thresholds.touch` | `config.yaml` | 触碰阈值，默认 0.008 (0.8%) |
+| `thresholds.touch` | `config.yaml` | 200MA 触底阈值，默认 0.012 (1.2%) |
 | `alert.cooldown_seconds` | `config.yaml` | 冷却时间，默认 3600 秒 |
 
 ---

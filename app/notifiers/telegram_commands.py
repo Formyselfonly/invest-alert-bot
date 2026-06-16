@@ -26,8 +26,8 @@ MAX_TRACKED_MESSAGES = 100
 WELCOME = (
     "👋 *Invest Alert Bot*\n\n"
     "告警分两类推送：\n"
-    "📊 均线密集\n"
-    "🎯 200MA / 200EMA 触碰\n\n"
+    "📊 均线密集（20/60/120 MA+EMA）\n"
+    "🎯 200MA 触碰（1D / 1W）\n\n"
     "/status — 全部监控状态\n"
     "/status BTC — 单标的\n"
     "/clear — 清屏"
@@ -36,8 +36,8 @@ WELCOME = (
 HELP = (
     "*Invest Alert Bot 帮助*\n\n"
     "*告警（分两条线推送）*\n"
-    "📊 均线密集 — 六线 spread ≤ 0.8%\n"
-    "🎯 200MA/EMA — 距离 ≤ 0.8%\n\n"
+    "📊 均线密集 — 20/60/120 MA+EMA 六线 spread ≤ 0.8%\n"
+    "🎯 200MA 触碰 — 1D/1W，距 200MA ≤ 阈值\n\n"
     "*命令*\n"
     "/status — 展示全部标的 × 周期\n"
     "/status BTC — 只看单个标的\n"

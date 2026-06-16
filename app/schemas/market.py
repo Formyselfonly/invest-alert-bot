@@ -6,6 +6,7 @@ from enum import StrEnum
 class DataSource(StrEnum):
     BINANCE = "binance"
     YFINANCE = "yfinance"
+    NASDAQ = "nasdaq"  # 纳斯达克上市标的，经 Yahoo Finance 拉 OHLCV
 
 
 @dataclass(frozen=True)

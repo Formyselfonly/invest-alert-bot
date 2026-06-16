@@ -35,23 +35,22 @@ spread_ratio = (max(indicators) - min(indicators)) / current_price
 
 ---
 
-### 2.2 关键均线触碰告警
+### 2.2 200MA 触底告警
 
 | 项目 | 说明 |
 |------|------|
-| 监控指标 | 200MA、200EMA |
-| 支持周期 | **4H**、**日线（1D）**、**周线（1W）** |
-| 判定标准 | 最新价格与 200MA/200EMA 的绝对差值，占当前价格的 **≤ 0.8%** |
+| 监控指标 | **200MA**（不看 200EMA） |
+| 支持周期 | **日线（1D）**、**周线（1W）**（**不含 4H**） |
+| 判定标准 | 最新价格与 200MA 的绝对差值，占当前价格的 **≤ 1.2%** |
 
 **公式**：
 
 ```
-touch_ratio = abs(current_price - indicator_value) / current_price
-触发条件：touch_ratio ≤ threshold_touch（默认 0.008）
-         对 200MA 和 200EMA 分别独立检测
+touch_ratio = abs(current_price - 200MA) / current_price
+触发条件：touch_ratio ≤ threshold_touch（默认 0.012）
 ```
 
-**语义**：价格接近长期关键均线，可能形成支撑/阻力反应位。
+**语义**：价格接近长期 200 日均线，可能形成支撑/阻力反应位（抄底观察位）。
 
 ---
 
@@ -61,7 +60,7 @@ touch_ratio = abs(current_price - indicator_value) / current_price
 |------|------|
 | **触碰即触发** | 基于实时 tick / 最新价判断，**不等待 K 线收盘确认** |
 | **多周期并行** | 同一交易对在不同周期上独立计算、独立告警 |
-| **多指标独立** | 200MA 与 200EMA 分别检测，任一满足即触发对应告警 |
+| **周期分工** | 均线密集：4H/1D/1W；200MA 触底：仅 1D/1W |
 
 ---
 
@@ -80,19 +79,29 @@ telegram:
 
 symbols:
   - symbol: BTC/USDT
-    source: binance                    # binance | yfinance
-    intervals: [4h, 1d]                # 该交易对启用的周期
+    source: binance
+    market: futures
+    intervals: [4h, 1d, 1wk]
+
+  - symbol: MSFT
+    source: nasdaq                 # binance | nasdaq | yfinance
+    intervals: [4h, 1d, 1wk]
+
+  - symbol: XAU
+    source: nasdaq
+    ticker: GC=F                   # 可选，覆盖 Yahoo ticker
+    intervals: [4h, 1d, 1wk]
 
 thresholds:
-  cluster: 0.008                       # 密集告警阈值（0.8%）
-  touch: 0.008                         # 触碰告警阈值（0.8%）
+  cluster: 0.008                   # 密集告警阈值（0.8%）
+  touch: 0.012                     # 200MA 触底阈值（1.2%）
 
 alert:
-  cooldown_seconds: 3600               # 同一 (symbol, interval, alert_type) 冷却时间
-  dedupe_window_seconds: 60            # 防抖窗口，避免同一秒内重复推送
+  cooldown_seconds: 3600           # 同一 (symbol, interval, alert_type) 冷却时间
+  dedupe_window_seconds: 60        # 防抖窗口，避免同一秒内重复推送
 
 polling:
-  yfinance_interval_seconds: 30        # 非加密资产轮询间隔
+  yfinance_interval_seconds: 300   # nasdaq/yfinance 轮询间隔
 
 logging:
   level: INFO
@@ -107,8 +116,9 @@ logging:
 
 | 资产类型 | 数据源 | 接入方式 | 示例 |
 |----------|--------|----------|------|
-| 加密货币 | Binance | WebSocket 实时推送 + REST 历史 K 线初始化 | BTC/USDT, ETH/USDT, SOL/USDT |
-| 传统/美股 | Yahoo Finance | 定时轮询（非 WebSocket） | MSTR, AAPL |
+| 加密货币 | Binance 合约 | WebSocket 实时 + REST 历史 K 线 | BTC/USDT, ETH/USDT |
+| 美股 | Nasdaq（Yahoo Finance） | 定时轮询（默认 300s） | MSFT, NVDA, MSTR |
+| 黄金 | Nasdaq（Yahoo Finance） | 定时轮询，`ticker: GC=F` | XAU |
 
 **启动流程**：
 
@@ -125,10 +135,10 @@ logging:
 | 字段 | 示例 |
 |------|------|
 | 资产名称 | `BTC/USDT` |
-| 告警类型 | `均线密集` / `200MA 触碰` / `200EMA 触碰` |
-| 周期 | `4H` / `1D` / `1W` |
+| 告警类型 | `均线密集` / `200MA 触碰` |
+| 周期 | 密集：4H/1D/1W；200MA：1D/1W |
 | 当前价格 | `$67,432.50` |
-| 触发详情 | 密集区间宽度 0.62% / 距 200EMA 0.41% |
+| 触发详情 | 密集区间宽度 0.62% / 距 200MA 1.05% |
 | 时间戳 | `2026-06-16 14:32:08 UTC` |
 
 **消息示例**：
@@ -174,9 +184,9 @@ logging:
 
 ### 5.1 本期包含（In Scope）
 
-- 均线密集 + 关键均线触碰两类告警
+- 均线密集（4H/1D/1W 六线）+ 200MA 触底（1D/1W）
 - Binance 加密资产 WebSocket 实时监控
-- Yahoo Finance 传统/美股资产轮询监控
+- Nasdaq/Yahoo 美股与黄金轮询监控
 - Telegram 告警推送
 - `config.yaml` 动态配置
 - Docker 容器化部署
@@ -196,8 +206,8 @@ logging:
 ## 6. 验收标准
 
 - [ ] 配置清单内所有交易对在对应周期上正确计算 MA/EMA
-- [ ] 密集告警：6 根指标 spread ≤ 0.8% 时触发，否则不触发
-- [ ] 触碰告警：价格距 200MA/200EMA ≤ 0.8% 时分别独立触发
+- [ ] 密集告警：6 根指标 spread ≤ 0.8% 时触发（4H/1D/1W）
+- [ ] 200MA 触底：价格距 200MA ≤ 1.2% 时触发（仅 1D/1W）
 - [ ] 实时触发，不依赖 K 线收盘
 - [ ] Telegram 消息格式完整、字段正确
 - [ ] WebSocket 断线后 30 秒内自动恢复
@@ -211,7 +221,7 @@ logging:
 | # | 问题 | 当前建议 |
 |---|------|----------|
 | 1 | 冷却期时长 | 1 小时，可按交易对或告警类型单独配置 |
-| 2 | yfinance 轮询间隔 | 30 秒（美股非实时，可接受） |
+| 2 | yfinance 轮询间隔 | 300 秒（美股/黄金非实时，可接受） |
 | 3 | 历史 K 线初始化 | 启动时 REST 拉取 250 根 K 线 |
 | 4 | Binance 接入方式 | 原生 WebSocket + REST（低延迟优先；ccxt 仅作备选） |
 

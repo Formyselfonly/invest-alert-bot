@@ -10,7 +10,7 @@ from app.schemas.market import Indicators, Kline
 MIN_KLINES = 200
 MONITOR_INTERVALS = frozenset({"4h", "1d", "1wk", "1w"})
 CLUSTER_INTERVALS = MONITOR_INTERVALS
-TOUCH_INTERVALS = MONITOR_INTERVALS
+TOUCH_INTERVALS = frozenset({"1d", "1wk", "1w"})
 
 
 def klines_to_dataframe(klines: list[Kline]) -> pd.DataFrame:
@@ -33,6 +33,10 @@ def calculate_indicators(klines: list[Kline]) -> Indicators | None:
         return None
 
     df = klines_to_dataframe(klines)
+    df = df.dropna(subset=["close"])
+    if len(df) < MIN_KLINES:
+        return None
+
     close = df["close"]
 
     return Indicators(
@@ -79,10 +83,6 @@ def check_touch_alerts(
     ma_ratio = touch_ratio(price, indicators.ma_200)
     if ma_ratio <= threshold:
         triggered.append((AlertType.TOUCH_200_MA, ma_ratio))
-
-    ema_ratio = touch_ratio(price, indicators.ema_200)
-    if ema_ratio <= threshold:
-        triggered.append((AlertType.TOUCH_200_EMA, ema_ratio))
 
     return triggered
 

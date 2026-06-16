@@ -13,7 +13,7 @@ class SymbolConfig(BaseModel):
     source: DataSource
     market: str = "futures"
     intervals: list[str] = Field(default_factory=list)
-    ticker: str | None = None  # yfinance 拉数用，告警仍显示 symbol
+    ticker: str | None = None  # nasdaq/yfinance 拉数用，告警仍显示 symbol
 
     @property
     def yf_ticker(self) -> str:

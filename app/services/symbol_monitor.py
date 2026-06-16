@@ -22,6 +22,7 @@ from app.services.status_format import (
     INTERVAL_LABELS,
     MonitorMetrics,
     build_metrics,
+    format_pct,
 )
 
 logger = logging.getLogger(__name__)
@@ -103,17 +104,18 @@ class SymbolMonitor:
 
         ind = self.indicators
         cluster_pct = cluster_spread_ratio(ind, self.current_price) * 100
-        dist_ma = touch_ratio(self.current_price, ind.ma_200) * 100
-        dist_ema = touch_ratio(self.current_price, ind.ema_200) * 100
 
-        return (
-            f"✅ *{label}*\n"
-            f"   200MA `${ind.ma_200:,.2f}` | "
-            f"200EMA `${ind.ema_200:,.2f}`\n"
-            f"   密集 `{cluster_pct:.2f}%` | "
-            f"距200MA `{dist_ma:.2f}%` | "
-            f"距200EMA `{dist_ema:.2f}%`"
-        )
+        lines = [
+            f"✅ *{label}*",
+            f"   密集 `{format_pct(cluster_pct)}`",
+        ]
+        if supports_touch(self.interval):
+            dist_ma = touch_ratio(self.current_price, ind.ma_200) * 100
+            lines.append(
+                f"   200MA `${ind.ma_200:,.2f}` | "
+                f"距200MA `{format_pct(dist_ma)}`",
+            )
+        return "\n".join(lines)
 
     async def _evaluate(self) -> None:
         if self.indicators is None or self.current_price <= 0:
