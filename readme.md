@@ -1,4 +1,4 @@
-# Invest Alert Bot
+# Invest Alert Bot(抄底王)
 
 一个基于 Python 的高频、低延迟行情监控与告警系统，专注于**均线簇密集度检测**与**关键均线触碰提醒**。满足条件时通过 Telegram 即时推送，辅助交易决策。
 
