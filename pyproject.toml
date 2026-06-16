@@ -1,0 +1,35 @@
+[project]
+name = "invest-alert-bot"
+version = "0.1.0"
+description = "Real-time MA cluster and touch alerts via Telegram"
+readme = "readme.md"
+requires-python = ">=3.12"
+dependencies = [
+    "aiohttp>=3.14.1",
+    "pandas>=3.0.3",
+    "pydantic>=2.13.4",
+    "pydantic-settings>=2.14.1",
+    "python-telegram-bot>=22.8",
+    "pyyaml>=6.0.3",
+    "websockets>=16.0",
+    "yfinance>=1.4.1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.0",
+    "pytest-asyncio>=1.4.0",
+    "ruff>=0.15.17",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 79
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]

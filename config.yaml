@@ -1,0 +1,32 @@
+telegram:
+  bot_token: "${TELEGRAM_BOT_TOKEN}"
+  chat_id: "${TELEGRAM_CHAT_ID}"
+
+symbols:
+  - symbol: BTC/USDT
+    source: binance
+    market: spot
+    intervals: [4h, 1d, 1wk]
+
+  - symbol: ETH/USDT
+    source: binance
+    market: spot
+    intervals: [4h, 1d, 1wk]
+
+thresholds:
+  cluster: 0.008    # 密集告警：0.8%
+  touch: 0.008      # 触碰告警：0.8%
+
+alert:
+  cooldown_seconds: 3600
+  dedupe_window_seconds: 60
+
+polling:
+  yfinance_interval_seconds: 30
+  kline_refresh_seconds: 60
+
+logging:
+  level: INFO
+  file: logs/app.log
+  max_bytes: 10485760
+  backup_count: 5

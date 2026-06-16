@@ -9,10 +9,10 @@
 
 | 阶段 | 名称 | 目标 | 状态 |
 |------|------|------|------|
-| 1 | Setup | 项目骨架、配置、日志 | ⬜ 待开始 |
-| 2 | Development | 数据采集、计算引擎、告警推送 | ⬜ 待开始 |
-| 3 | Integration | 主循环集成、断线重连、测试 | ⬜ 待开始 |
-| 4 | Deployment | 容器化、云部署、运维 | ⬜ 待开始 |
+| 1 | Setup | 项目骨架、配置、日志 | ✅ 完成 |
+| 2 | Development | 数据采集、计算引擎、告警推送 | ✅ 完成 |
+| 3 | Integration | 主循环集成、断线重连、测试 | ✅ 完成 |
+| 4 | Deployment | 容器化、云部署、运维 | 🟡 Dockerfile 就绪，待实际上云 |
 
 ---
 
@@ -53,13 +53,20 @@ invest-alert-bot/
 │   ├── core/
 │   │   ├── config.py            # 配置加载与校验
 │   │   └── logging.py           # 结构化日志
+│   ├── schemas/
+│   │   ├── config.py            # AppConfig, SymbolConfig
+│   │   ├── market.py            # Kline, Tick, Indicators
+│   │   └── alert.py             # AlertEvent, AlertType
 │   ├── providers/
+│   │   ├── base.py              # MarketDataProvider Protocol
 │   │   ├── binance_ws.py        # Binance WebSocket 管理器
 │   │   ├── binance_rest.py      # 历史 K 线 REST 拉取
 │   │   └── yfinance_poll.py     # Yahoo Finance 轮询
 │   ├── services/
 │   │   ├── engine.py            # 指标计算 + 触发检测
-│   │   └── alert_manager.py     # 冷却/防抖/去重
+│   │   ├── alert_manager.py     # 冷却/防抖/去重
+│   │   ├── symbol_monitor.py    # 单 symbol × interval 状态
+│   │   └── coordinator.py       # 编排调度
 │   └── notifiers/
 │       └── telegram.py          # Telegram 消息推送
 ├── tests/
