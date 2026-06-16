@@ -6,7 +6,12 @@ import logging
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 
-from app.schemas.alert import ALERT_TYPE_LABELS, AlertEvent, AlertType
+from app.schemas.alert import (
+    ALERT_TYPE_LABELS,
+    SIMULTANEOUS_ALERT_HINT,
+    AlertEvent,
+    AlertType,
+)
 from app.schemas.market import Indicators, Kline
 from app.services.alert_manager import AlertManager
 from app.services.engine import (
@@ -180,14 +185,33 @@ class SymbolMonitor:
                 )
 
         # 先推密集，再推 200 线触碰，避免混在一起
-        for event in events + touch_events:
-            if self._alert_manager.should_send(event):
-                logger.info(
-                    "Alert triggered: %s %s %s @ %s",
-                    event.symbol,
-                    event.interval,
-                    event.alert_type,
-                    event.price,
+        candidates = events + touch_events
+        to_send = [
+            event for event in candidates
+            if self._alert_manager.should_send(event)
+        ]
+        both_types = (
+            any(e.alert_type == AlertType.CLUSTER for e in to_send)
+            and any(e.alert_type == AlertType.TOUCH_200_MA for e in to_send)
+        )
+
+        for index, event in enumerate(to_send):
+            out = event
+            if both_types and index == len(to_send) - 1:
+                out = AlertEvent(
+                    symbol=event.symbol,
+                    interval=event.interval,
+                    alert_type=event.alert_type,
+                    price=event.price,
+                    detail=f"{event.detail}\n{SIMULTANEOUS_ALERT_HINT}",
+                    triggered_at=event.triggered_at,
                 )
-                await self._on_alert(event)
-                self._alert_manager.record_sent(event)
+            logger.info(
+                "Alert triggered: %s %s %s @ %s",
+                event.symbol,
+                event.interval,
+                event.alert_type,
+                event.price,
+            )
+            await self._on_alert(out)
+            self._alert_manager.record_sent(event)

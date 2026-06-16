@@ -13,6 +13,10 @@ ALERT_TYPE_LABELS: dict[AlertType, str] = {
     AlertType.TOUCH_200_MA: "200MA 触碰",
 }
 
+SIMULTANEOUS_ALERT_HINT = (
+    "💡 仓位管理最重要，不输就是赢，不做投机只做投资"
+)
+
 
 @dataclass(frozen=True)
 class AlertEvent:

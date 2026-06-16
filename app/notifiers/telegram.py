@@ -20,8 +20,8 @@ INTERVAL_LABELS = {
 }
 
 ALERT_HEADERS = {
-    AlertType.CLUSTER: "📊 【均线密集】",
-    AlertType.TOUCH_200_MA: "🎯 【200MA 触碰】",
+    AlertType.CLUSTER: "📊 【均线密集-开仓机会】",
+    AlertType.TOUCH_200_MA: "🎯 【200MA 触碰-抄底机会】",
 }
 
 
@@ -59,7 +59,7 @@ class TelegramNotifier:
         message = (
             "✅ *Invest Alert Bot 已启动*\n"
             f"监控 *{symbol_count}* 个组合 · 告警分两类推送\n"
-            "📊 均线密集  🎯 200MA 触碰（1D/1W）\n\n"
+            "📊 均线密集-开仓机会  🎯 200MA 触碰-抄底机会（1D/1W）\n\n"
             "/status 摘要 · /status BTC 详情 · /clear 清屏"
         )
         if skipped:
