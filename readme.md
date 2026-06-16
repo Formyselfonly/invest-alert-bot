@@ -553,4 +553,8 @@ docker run -d \
 
 ## License
 
-MIT
+仅供个人学习使用，禁止他人商用，作者是https://github.com/Formyselfonly
+
+b站：郑同学是我
+
+合作或者需要付费完整版，请联系作者
