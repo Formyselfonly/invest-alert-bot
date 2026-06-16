@@ -11,8 +11,13 @@ class TelegramConfig(BaseModel):
 class SymbolConfig(BaseModel):
     symbol: str
     source: DataSource
-    market: str = "spot"
+    market: str = "futures"
     intervals: list[str] = Field(default_factory=list)
+    ticker: str | None = None  # yfinance 拉数用，告警仍显示 symbol
+
+    @property
+    def yf_ticker(self) -> str:
+        return self.ticker or self.symbol
 
 
 class ThresholdConfig(BaseModel):
@@ -26,7 +31,7 @@ class AlertConfig(BaseModel):
 
 
 class PollingConfig(BaseModel):
-    yfinance_interval_seconds: int = 30
+    yfinance_interval_seconds: int = 300
     kline_refresh_seconds: int = 60
 
 

@@ -7,7 +7,7 @@ import logging
 from telegram import Bot
 from telegram.error import TelegramError
 
-from app.schemas.alert import ALERT_TYPE_LABELS, AlertEvent, AlertType
+from app.schemas.alert import AlertEvent, AlertType
 from app.schemas.config import TelegramConfig
 
 logger = logging.getLogger(__name__)
@@ -19,31 +19,27 @@ INTERVAL_LABELS = {
     "1wk": "1W",
 }
 
-ALERT_EMOJI = {
-    AlertType.CLUSTER: "📊",
-    AlertType.TOUCH_200_MA: "🎯",
-    AlertType.TOUCH_200_EMA: "🎯",
+ALERT_HEADERS = {
+    AlertType.CLUSTER: "📊 【均线密集】",
+    AlertType.TOUCH_200_MA: "🎯 【200MA 触碰】",
+    AlertType.TOUCH_200_EMA: "🎯 【200EMA 触碰】",
 }
 
 
 def format_alert_message(event: AlertEvent) -> str:
-    label = ALERT_TYPE_LABELS[event.alert_type]
-    emoji = ALERT_EMOJI.get(event.alert_type, "🔔")
+    header = ALERT_HEADERS.get(event.alert_type, "🔔 【告警】")
     interval = INTERVAL_LABELS.get(
         event.interval.lower(),
         event.interval.upper(),
     )
-    ts = event.triggered_at.strftime("%Y-%m-%d %H:%M:%S UTC")
+    ts = event.triggered_at.strftime("%Y-%m-%d %H:%M UTC")
 
     return (
-        f"{emoji} *Invest Alert Bot*\n"
-        f"━━━━━━━━━━━━━━━\n"
-        f"*告警类型*: {label}\n"
-        f"*资产*: `{event.symbol}`\n"
-        f"*周期*: {interval}\n"
-        f"*当前价*: `${event.price:,.4f}`\n"
-        f"*详情*: {event.detail}\n"
-        f"*时间*: {ts}"
+        f"{header}\n"
+        f"`{event.symbol}` · {interval} · "
+        f"${event.price:,.2f}\n"
+        f"{event.detail}\n"
+        f"_{ts}_"
     )
 
 
@@ -56,13 +52,19 @@ class TelegramNotifier:
         message = format_alert_message(event)
         await self._send_with_retry(message)
 
-    async def send_startup_message(self, symbol_count: int) -> None:
+    async def send_startup_message(
+        self,
+        symbol_count: int,
+        skipped: list[str] | None = None,
+    ) -> None:
         message = (
             "✅ *Invest Alert Bot 已启动*\n"
-            f"正在监控 *{symbol_count}* 个标的 × 周期组合\n"
-            "触碰条件时将即时推送告警。\n\n"
-            "发送 /status 查看状态，/help 查看帮助。"
+            f"监控 *{symbol_count}* 个组合 · 告警分两类推送\n"
+            "📊 均线密集  🎯 200MA/EMA 触碰\n\n"
+            "/status 摘要 · /status BTC 详情 · /clear 清屏"
         )
+        if skipped:
+            message += f"\n\n⚠️ 跳过 {len(skipped)} 项（K线不足 200 根）"
         await self._send_with_retry(message)
 
     async def send_error_message(self, text: str) -> None:

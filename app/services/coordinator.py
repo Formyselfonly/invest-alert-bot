@@ -16,6 +16,7 @@ from app.schemas.config import AppConfig, SymbolConfig
 from app.schemas.market import DataSource, Kline, Tick
 from app.services.alert_manager import AlertManager
 from app.services.engine import normalize_interval
+from app.services.status_format import MonitorMetrics
 from app.services.symbol_monitor import INTERVAL_ORDER, SymbolMonitor
 
 logger = logging.getLogger(__name__)
@@ -31,57 +32,125 @@ class Coordinator:
         )
         self._monitors: dict[tuple[str, str], SymbolMonitor] = {}
         self._binance_symbol_map: dict[str, str] = {}
-        self._ws_manager: BinanceWebSocketManager | None = None
+        self._ws_managers: list[BinanceWebSocketManager] = []
         self._yf_pollers: list[YahooFinancePoller] = []
         self._session: aiohttp.ClientSession | None = None
+        self._skipped_monitors: list[str] = []
 
     @property
     def monitor_count(self) -> int:
         return len(self._monitors)
 
-    def format_status(self) -> str:
+    def _configured_total(self) -> int:
+        return sum(len(s.intervals) for s in self._config.symbols)
+
+    def _collect_metrics(self) -> list[MonitorMetrics]:
+        items: list[MonitorMetrics] = []
+        for monitor in self._monitors.values():
+            metrics = monitor.get_metrics()
+            if metrics is not None:
+                items.append(metrics)
+        return items
+
+    def _resolve_symbol(self, query: str) -> str | None:
+        q = query.strip().upper().replace("/", "")
+        configured = {cfg.symbol for cfg in self._config.symbols}
+        for symbol in configured:
+            key = symbol.upper().replace("/", "")
+            if q == key or q == key.replace("USDT", ""):
+                return symbol
+        return None
+
+    def format_status(self, symbol_query: str | None = None) -> str:
+        if symbol_query:
+            symbol = self._resolve_symbol(symbol_query)
+            if symbol is None:
+                return f"未找到标的 `{symbol_query}`，试试 `/status BTC`"
+            return self._format_symbol_detail(symbol)
+        return self._format_full_status()
+
+    def _format_full_status(self) -> str:
         if not self._monitors:
             return "暂无监控任务"
 
+        total = self._configured_total()
+        active = len(self._monitors)
+        symbols = sorted({sym for sym, _ in self._monitors})
+
         lines = [
-            f"监控组合：*{self.monitor_count}* 个",
-            f"冷却：{self._config.alert.cooldown_seconds}s",
-            "",
-            "_各周期独立均线；现价为实时价，用于触碰判定_",
+            f"📡 *监控状态*（{active}/{total} 活跃）",
             "",
         ]
-
-        by_symbol: dict[str, list[tuple[str, SymbolMonitor]]] = {}
-        for (symbol, interval), monitor in self._monitors.items():
-            by_symbol.setdefault(symbol, []).append((interval, monitor))
-
-        for symbol in sorted(by_symbol):
-            monitors = by_symbol[symbol]
-            monitors.sort(
-                key=lambda x: INTERVAL_ORDER.get(x[0].lower(), 99),
-            )
-            spot = monitors[0][1].current_price
-            spot_text = (
-                f"${spot:,.2f}" if spot > 0 else "—"
-            )
-            lines.append(f"*{symbol}*  现价 {spot_text}")
-            for _interval, monitor in monitors:
-                lines.append(monitor.format_status_line())
+        for symbol in symbols:
+            lines.append(self._format_symbol_detail(symbol))
             lines.append("")
 
+        lines.append("`/status BTC` 单标的 · `/clear` 清屏")
         return "\n".join(lines).rstrip()
+
+    def _format_symbol_detail(self, symbol: str) -> str:
+        monitors = [
+            (iv, mon)
+            for (sym, iv), mon in self._monitors.items()
+            if sym == symbol
+        ]
+        if not monitors:
+            return f"`{symbol}` 暂无活跃监控（可能 K 线不足被跳过）"
+
+        monitors.sort(key=lambda x: INTERVAL_ORDER.get(x[0].lower(), 99))
+        spot = monitors[0][1].current_price
+        spot_text = f"${spot:,.2f}" if spot > 0 else "—"
+
+        cluster_lines: list[str] = []
+        touch_lines: list[str] = []
+
+        for _iv, monitor in monitors:
+            metrics = monitor.get_metrics()
+            if metrics is None:
+                cluster_lines.append(
+                    f"⏳ {monitor.interval}  指标初始化中…",
+                )
+                continue
+            cluster_lines.append(
+                f"*{metrics.interval_label}*  "
+                f"`{metrics.cluster_pct:.2f}%`",
+            )
+            touch_lines.append(
+                f"*{metrics.interval_label}*  "
+                f"200MA `{metrics.touch_ma_pct:.2f}%` · "
+                f"200EMA `{metrics.touch_ema_pct:.2f}%`",
+            )
+
+        return (
+            f"*{symbol}*  现价 {spot_text}\n"
+            f"📊 *均线密集*\n"
+            + "\n".join(cluster_lines)
+            + "\n🎯 *200MA / 200EMA*\n"
+            + "\n".join(touch_lines)
+        )
 
     async def start(self) -> None:
         self._session = aiohttp.ClientSession()
-        await self._bootstrap_monitors()
-        await self._start_binance_streams()
-        await self._start_yfinance_pollers()
-        await self._notifier.send_startup_message(self.monitor_count)
-        logger.info("Coordinator started with %s monitors", self.monitor_count)
+        try:
+            await self._bootstrap_monitors()
+            await self._start_binance_streams()
+            await self._start_yfinance_pollers()
+            await self._notifier.send_startup_message(
+                self.monitor_count,
+                self._skipped_monitors,
+            )
+            logger.info(
+                "Coordinator started with %s monitors (%s skipped)",
+                self.monitor_count,
+                len(self._skipped_monitors),
+            )
+        except Exception:
+            await self.stop()
+            raise
 
     async def stop(self) -> None:
-        if self._ws_manager is not None:
-            await self._ws_manager.stop()
+        for ws_manager in self._ws_managers:
+            await ws_manager.stop()
         for poller in self._yf_pollers:
             await poller.stop()
         if self._session is not None:
@@ -90,8 +159,30 @@ class Coordinator:
 
     async def _bootstrap_monitors(self) -> None:
         rest = BinanceRestClient(self._session)
+        self._skipped_monitors = []
         for symbol_cfg in self._config.symbols:
             for interval in symbol_cfg.intervals:
+                label = f"{symbol_cfg.symbol} {interval}"
+                try:
+                    klines = await self._fetch_history(
+                        rest,
+                        symbol_cfg,
+                        interval,
+                    )
+                except Exception:
+                    logger.exception("Skip monitor (fetch failed): %s", label)
+                    self._skipped_monitors.append(label)
+                    continue
+
+                if len(klines) < 200:
+                    logger.warning(
+                        "Skip monitor (need 200 klines, got %s): %s",
+                        len(klines),
+                        label,
+                    )
+                    self._skipped_monitors.append(label)
+                    continue
+
                 monitor = SymbolMonitor(
                     symbol=symbol_cfg.symbol,
                     interval=interval,
@@ -100,12 +191,12 @@ class Coordinator:
                     alert_manager=self._alert_manager,
                     on_alert=self._handle_alert,
                 )
-                klines = await self._fetch_history(
-                    rest,
-                    symbol_cfg,
-                    interval,
-                )
                 monitor.initialize(klines)
+                if monitor.indicators is None:
+                    logger.warning("Skip monitor (indicators N/A): %s", label)
+                    self._skipped_monitors.append(label)
+                    continue
+
                 key = (symbol_cfg.symbol, interval)
                 self._monitors[key] = monitor
 
@@ -121,9 +212,14 @@ class Coordinator:
         interval: str,
     ) -> list[Kline]:
         if symbol_cfg.source == DataSource.BINANCE:
-            return await rest.fetch_klines(symbol_cfg.symbol, interval)
+            return await rest.fetch_klines(
+                symbol_cfg.symbol,
+                interval,
+                market=symbol_cfg.market,
+            )
         poller = YahooFinancePoller(
             symbol=symbol_cfg.symbol,
+            yf_ticker=symbol_cfg.yf_ticker,
             interval=interval,
             poll_seconds=self._config.polling.yfinance_interval_seconds,
             on_update=self._handle_yfinance_update,
@@ -131,39 +227,59 @@ class Coordinator:
         return await asyncio.to_thread(poller.fetch_history, 250)
 
     async def _start_binance_streams(self) -> None:
-        binance_symbols = [
-            cfg.symbol
+        spot_cfgs = [
+            cfg
             for cfg in self._config.symbols
-            if cfg.source == DataSource.BINANCE
+            if cfg.source == DataSource.BINANCE and cfg.market == "spot"
         ]
-        if not binance_symbols:
-            return
+        futures_cfgs = [
+            cfg
+            for cfg in self._config.symbols
+            if cfg.source == DataSource.BINANCE and cfg.market == "futures"
+        ]
 
-        intervals = sorted(
-            {
-                normalize_interval(iv)
-                for cfg in self._config.symbols
-                if cfg.source == DataSource.BINANCE
-                for iv in cfg.intervals
-            },
-        )
-        unique_symbols = sorted(set(binance_symbols))
+        for market, cfgs in (("spot", spot_cfgs), ("futures", futures_cfgs)):
+            if not cfgs:
+                continue
+            symbols = sorted(
+                {
+                    cfg.symbol
+                    for cfg in cfgs
+                    if self._has_active_monitor(cfg.symbol)
+                },
+            )
+            if not symbols:
+                continue
+            intervals = sorted(
+                {
+                    normalize_interval(iv)
+                    for cfg in cfgs
+                    for iv in cfg.intervals
+                },
+            )
+            manager = BinanceWebSocketManager(
+                symbols=symbols,
+                intervals=intervals,
+                on_tick=self._handle_binance_tick,
+                on_kline=self._handle_binance_kline,
+                market=market,
+            )
+            await manager.start()
+            self._ws_managers.append(manager)
 
-        self._ws_manager = BinanceWebSocketManager(
-            symbols=unique_symbols,
-            intervals=intervals,
-            on_tick=self._handle_binance_tick,
-            on_kline=self._handle_binance_kline,
-        )
-        await self._ws_manager.start()
+    def _has_active_monitor(self, symbol: str) -> bool:
+        return any(key[0] == symbol for key in self._monitors)
 
     async def _start_yfinance_pollers(self) -> None:
         for symbol_cfg in self._config.symbols:
             if symbol_cfg.source != DataSource.YFINANCE:
                 continue
             for interval in symbol_cfg.intervals:
+                if (symbol_cfg.symbol, interval) not in self._monitors:
+                    continue
                 poller = YahooFinancePoller(
                     symbol=symbol_cfg.symbol,
+                    yf_ticker=symbol_cfg.yf_ticker,
                     interval=interval,
                     poll_seconds=self._config.polling.yfinance_interval_seconds,
                     on_update=self._handle_yfinance_update,

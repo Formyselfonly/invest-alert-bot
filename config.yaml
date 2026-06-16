@@ -3,27 +3,74 @@ telegram:
   chat_id: "${TELEGRAM_CHAT_ID}"
 
 symbols:
+  # ── 全部使用 Binance U 本位合约（futures）──
+  # 格式：MSFT/USDT → 合约 MSFTUSDT
+
   - symbol: BTC/USDT
     source: binance
-    market: spot
+    market: futures
     intervals: [4h, 1d, 1wk]
 
   - symbol: ETH/USDT
     source: binance
-    market: spot
+    market: futures
+    intervals: [4h, 1d, 1wk]
+
+  - symbol: SOL/USDT
+    source: binance
+    market: futures
+    intervals: [4h, 1d, 1wk]
+
+  - symbol: BNB/USDT
+    source: binance
+    market: futures
+    intervals: [4h, 1d, 1wk]
+
+  - symbol: HYPE/USDT
+    source: binance
+    market: futures
+    intervals: [4h, 1d, 1wk]
+
+  - symbol: MSFT/USDT
+    source: binance
+    market: futures
+    intervals: [4h, 1d, 1wk]
+
+  - symbol: NVDA/USDT
+    source: binance
+    market: futures
+    intervals: [4h, 1d, 1wk]
+
+  - symbol: MSTR/USDT
+    source: binance
+    market: futures
+    intervals: [4h, 1d, 1wk]
+
+  - symbol: GOOGL/USDT
+    source: binance
+    market: futures
+    intervals: [4h, 1d, 1wk]
+
+  - symbol: CRCL/USDT
+    source: binance
+    market: futures
+    intervals: [4h, 1d, 1wk]
+
+  - symbol: XAU/USDT
+    source: binance
+    market: futures
     intervals: [4h, 1d, 1wk]
 
 thresholds:
   cluster: 0.008    # 密集告警：0.8%
-  touch: 0.008      # 触碰告警：0.8%
+  touch: 0.012     # 触碰告警：3%
 
 alert:
   cooldown_seconds: 3600
   dedupe_window_seconds: 60
 
 polling:
-  yfinance_interval_seconds: 30
-  kline_refresh_seconds: 60
+  yfinance_interval_seconds: 300   # 保留配置项（当前未使用 yfinance）
 
 logging:
   level: INFO

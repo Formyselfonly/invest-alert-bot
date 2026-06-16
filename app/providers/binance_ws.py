@@ -17,7 +17,10 @@ from app.services.engine import normalize_interval
 
 logger = logging.getLogger(__name__)
 
-WS_BASE = "wss://stream.binance.com:9443/stream"
+WS_BASES = {
+    "spot": "wss://stream.binance.com:9443/stream",
+    "futures": "wss://fstream.binance.com/stream",
+}
 MAX_BACKOFF = 60
 
 TickHandler = Callable[[Tick], Awaitable[None]]
@@ -31,11 +34,13 @@ class BinanceWebSocketManager:
         intervals: list[str],
         on_tick: TickHandler,
         on_kline: KlineHandler,
+        market: str = "spot",
     ) -> None:
         self._symbols = symbols
         self._intervals = intervals
         self._on_tick = on_tick
         self._on_kline = on_kline
+        self._market = market
         self._running = False
         self._task: asyncio.Task[None] | None = None
         self._ws: ClientConnection | None = None
@@ -52,7 +57,8 @@ class BinanceWebSocketManager:
 
     @property
     def url(self) -> str:
-        return f"{WS_BASE}?streams={self._build_streams()}"
+        base = WS_BASES.get(self._market, WS_BASES["spot"])
+        return f"{base}?streams={self._build_streams()}"
 
     async def start(self) -> None:
         if self._running:
@@ -60,7 +66,8 @@ class BinanceWebSocketManager:
         self._running = True
         self._task = asyncio.create_task(self._run_forever())
         logger.info(
-            "Binance WS started for symbols=%s intervals=%s",
+            "Binance %s WS started for symbols=%s intervals=%s",
+            self._market,
             self._symbols,
             self._intervals,
         )

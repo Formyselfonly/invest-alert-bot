@@ -24,9 +24,8 @@
 |------|------|------|
 | **均线密集告警** | 20/60/120 的 MA 与 EMA（6 根），4H / 1D / 1W spread ≤ 0.8% | ✅ |
 | **关键位触碰告警** | 200MA / 200EMA，4H / 1D / 1W，距离 ≤ 0.8% | ✅ |
-| **Telegram 交互** | `/start` `/status` `/help` 命令 | ✅ |
-| **Binance 实时** | WebSocket aggTrade + K 线闭合更新 | ✅ |
-| **Yahoo Finance** | 美股/传统资产轮询（如 MSTR） | ✅ |
+| **Telegram 交互** | 摘要 `/status`、详情 `/status BTC`、清屏 | ✅ |
+| **Binance 合约** | 全部标的走 U 本位合约（BTC、MSFT/USDT 等），WebSocket 实时 | ✅ |
 | **Telegram 推送** | 触碰即触发，冷却 + 防抖 | ✅ |
 | **动态配置** | `config.yaml` 管理交易对 | ✅ |
 | **数据库** | 无（v1 纯内存，重启后冷却重置） | — |
@@ -39,8 +38,7 @@
 |------|------|
 | 语言 | Python 3.12+ |
 | 包管理 | [uv](https://docs.astral.sh/uv/) |
-| 加密行情 | Binance WebSocket + REST |
-| 传统/美股 | Yahoo Finance (yfinance) |
+| 行情 | Binance U 本位合约 WebSocket + REST |
 | 指标计算 | Pandas |
 | 告警推送 | Telegram Bot API |
 | 运行时 | Asyncio |
@@ -200,12 +198,12 @@ flowchart TB
 
 #### 数据源对照
 
-| 配置 `source` | 历史 K 线 | 实时价格 | 是否需要 Key |
-|---------------|-----------|----------|--------------|
-| `binance` | Binance REST | Binance WS `aggTrade` | 否（公开接口） |
-| `yfinance` | yfinance | 轮询最新 close（约 30s） | 否 |
+| 配置 `source` | 历史 K 线 | 实时价格 | 说明 |
+|---------------|-----------|----------|------|
+| `binance` + `market: futures` | Binance 合约 REST | Binance 合约 WS | **默认**；`MSFT/USDT` → `MSFTUSDT` |
 
-> `.env` 只需配置 Telegram；行情数据走 Binance / Yahoo **公开接口**，无需额外 API Key。
+> 股票/黄金等使用 Binance **代币化合约**（如 MSFTUSDT、XAUUSDT），与加密同一套实时链路。  
+> 新上线合约若历史 K 线不足 200 根，对应周期会在启动时跳过（日志可见）。
 
 ---
 
@@ -425,15 +423,17 @@ uv run python -m app.main
 
 | 方式 | 说明 |
 |------|------|
-| 输入 `/` | 弹出命令菜单（start / status / help） |
-| 底部按钮 | 📡 监控状态、❓ 帮助、🏠 主菜单 |
-| 消息内按钮 | `/start` 后消息下方的 inline 快捷按钮 |
+| 输入 `/` | 命令菜单（start / status / clear / help） |
+| 底部按钮 | 📡 监控摘要 · 🧹 清屏 · ❓ 帮助 |
 
 | 命令 | 作用 |
 |------|------|
-| `/start` | 欢迎 & 显示按钮菜单 |
-| `/status` | 查看各周期 **200MA/200EMA**、密集宽度、距均线距离 |
+| `/status` | **全部**标的 × 周期（密集 / 200线 分块） |
+| `/status BTC` | 只看单个标的 |
+| `/clear` | 清屏（告警推送不删） |
 | `/help` | 帮助 |
+
+**告警推送**也分两类标题：`📊 【均线密集】` 与 `🎯 【200MA/EMA 触碰】`，不会混在一条里。
 
 > 若更新后 `/` 菜单没出现：重启 `app.main`，并关闭 Telegram 对话重新打开。
 

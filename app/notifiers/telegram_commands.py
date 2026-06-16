@@ -5,17 +5,10 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 
-from telegram import (
-    BotCommand,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-    KeyboardButton,
-    ReplyKeyboardMarkup,
-    Update,
-)
+from telegram import BotCommand, KeyboardButton, ReplyKeyboardMarkup, Update
+from telegram.error import TelegramError
 from telegram.ext import (
     Application,
-    CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
     MessageHandler,
@@ -26,38 +19,42 @@ from app.schemas.config import TelegramConfig
 
 logger = logging.getLogger(__name__)
 
-StatusProvider = Callable[[], str]
+StatusProvider = Callable[[str | None], str]
+
+MAX_TRACKED_MESSAGES = 100
 
 WELCOME = (
     "👋 *Invest Alert Bot*\n\n"
-    "我会监控均线密集 & 200MA/EMA 触碰，条件满足时主动推送告警。\n\n"
-    "👇 用下方按钮，或输入 `/` 选择命令\n\n"
-    "告警周期：4H / 1D / 1W\n"
-    "阈值：密集 & 触碰均为 0.8%"
+    "告警分两类推送：\n"
+    "📊 均线密集\n"
+    "🎯 200MA / 200EMA 触碰\n\n"
+    "/status — 全部监控状态\n"
+    "/status BTC — 单标的\n"
+    "/clear — 清屏"
 )
 
 HELP = (
     "*Invest Alert Bot 帮助*\n\n"
-    "运行：`uv run python -m app.main`\n\n"
-    "*告警类型*\n"
-    "• 均线密集：六线 spread ≤ 0.8%\n"
-    "• 200MA/EMA 触碰：距离 ≤ 0.8%\n\n"
-    "*周期*：4H、1D、1W\n\n"
+    "*告警（分两条线推送）*\n"
+    "📊 均线密集 — 六线 spread ≤ 0.8%\n"
+    "🎯 200MA/EMA — 距离 ≤ 0.8%\n\n"
     "*命令*\n"
-    "/start — 欢迎 & 菜单\n"
-    "/status — 监控状态\n"
+    "/status — 展示全部标的 × 周期\n"
+    "/status BTC — 只看单个标的\n"
+    "/clear — 清屏\n"
     "/help — 本说明"
 )
 
 BOT_COMMANDS = [
-    BotCommand("start", "开始使用，显示菜单"),
-    BotCommand("status", "查看监控状态与价格"),
+    BotCommand("start", "开始使用"),
+    BotCommand("status", "全部监控状态"),
+    BotCommand("clear", "清屏"),
     BotCommand("help", "帮助说明"),
 ]
 
-BTN_STATUS = "📡 监控状态"
+BTN_STATUS = "📡 全部状态"
 BTN_HELP = "❓ 帮助"
-BTN_MENU = "🏠 主菜单"
+BTN_CLEAR = "🧹 清屏"
 
 
 class TelegramCommandBot:
@@ -70,6 +67,7 @@ class TelegramCommandBot:
     ) -> None:
         self._chat_id = int(config.chat_id)
         self._status_provider = status_provider
+        self._tracked_message_ids: list[int] = []
         self._application = (
             Application.builder()
             .token(config.bot_token)
@@ -85,42 +83,23 @@ class TelegramCommandBot:
             CommandHandler("status", self._cmd_status),
         )
         self._application.add_handler(
-            CallbackQueryHandler(self._on_callback),
+            CommandHandler("clear", self._cmd_clear),
         )
+        btn_pattern = f"^({BTN_STATUS}|{BTN_HELP}|{BTN_CLEAR})$"
         self._application.add_handler(
-            MessageHandler(
-                filters.Regex(f"^({BTN_STATUS}|{BTN_HELP}|{BTN_MENU})$"),
-                self._on_button_text,
-            ),
+            MessageHandler(filters.Regex(btn_pattern), self._on_button_text),
         )
 
     @staticmethod
     def _reply_keyboard() -> ReplyKeyboardMarkup:
         return ReplyKeyboardMarkup(
             [
-                [KeyboardButton(BTN_STATUS), KeyboardButton(BTN_HELP)],
-                [KeyboardButton(BTN_MENU)],
+                [KeyboardButton(BTN_STATUS), KeyboardButton(BTN_CLEAR)],
+                [KeyboardButton(BTN_HELP)],
             ],
             resize_keyboard=True,
             is_persistent=True,
-            input_field_placeholder="点按钮，或输入 / 查看命令",
-        )
-
-    @staticmethod
-    def _inline_keyboard() -> InlineKeyboardMarkup:
-        return InlineKeyboardMarkup(
-            [
-                [
-                    InlineKeyboardButton(
-                        BTN_STATUS,
-                        callback_data="status",
-                    ),
-                    InlineKeyboardButton(
-                        BTN_HELP,
-                        callback_data="help",
-                    ),
-                ],
-            ],
+            input_field_placeholder="/status 或 /status BTC",
         )
 
     def _authorized(self, update: Update) -> bool:
@@ -135,6 +114,11 @@ class TelegramCommandBot:
             return False
         return True
 
+    def _track_message(self, message_id: int) -> None:
+        self._tracked_message_ids.append(message_id)
+        if len(self._tracked_message_ids) > MAX_TRACKED_MESSAGES:
+            self._tracked_message_ids.pop(0)
+
     async def _register_commands(self) -> None:
         await self._application.bot.set_my_commands(BOT_COMMANDS)
         logger.info("Telegram bot command menu registered")
@@ -146,15 +130,12 @@ class TelegramCommandBot:
     ) -> None:
         if not self._authorized(update) or update.message is None:
             return
-        await update.message.reply_text(
+        sent = await update.message.reply_text(
             WELCOME,
             parse_mode="Markdown",
             reply_markup=self._reply_keyboard(),
         )
-        await update.message.reply_text(
-            "快捷操作：",
-            reply_markup=self._inline_keyboard(),
-        )
+        self._track_message(sent.message_id)
 
     async def _cmd_help(
         self,
@@ -172,7 +153,17 @@ class TelegramCommandBot:
     ) -> None:
         if not self._authorized(update) or update.message is None:
             return
-        await self._send_status(update.message)
+        symbol = " ".join(context.args) if context.args else None
+        await self._send_status(update.message, symbol)
+
+    async def _cmd_clear(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+    ) -> None:
+        if not self._authorized(update):
+            return
+        await self._clear_screen(context, update.message)
 
     async def _on_button_text(
         self,
@@ -183,44 +174,65 @@ class TelegramCommandBot:
             return
         text = update.message.text or ""
         if text == BTN_STATUS:
-            await self._send_status(update.message)
+            await self._send_status(update.message, None)
         elif text == BTN_HELP:
             await self._send_help(update.message)
-        elif text == BTN_MENU:
-            await self._cmd_start(update, context)
+        elif text == BTN_CLEAR:
+            await self._clear_screen(context, update.message)
 
-    async def _on_callback(
+    async def _send_status(
         self,
-        update: Update,
-        context: ContextTypes.DEFAULT_TYPE,
+        message,
+        symbol_query: str | None,
     ) -> None:
-        query = update.callback_query
-        if query is None:
-            return
-        await query.answer()
-        if not self._authorized(update):
-            return
-        if query.message is None:
-            return
-        if query.data == "status":
-            await self._send_status(query.message)
-        elif query.data == "help":
-            await self._send_help(query.message)
-
-    async def _send_status(self, message) -> None:
-        body = self._status_provider()
-        await message.reply_text(
-            f"📡 *监控状态*\n\n{body}",
+        body = self._status_provider(symbol_query)
+        sent = await message.reply_text(
+            body,
             parse_mode="Markdown",
             reply_markup=self._reply_keyboard(),
         )
+        self._track_message(sent.message_id)
 
     async def _send_help(self, message) -> None:
-        await message.reply_text(
+        sent = await message.reply_text(
             HELP,
             parse_mode="Markdown",
             reply_markup=self._reply_keyboard(),
         )
+        self._track_message(sent.message_id)
+
+    async def _clear_screen(
+        self,
+        context: ContextTypes.DEFAULT_TYPE,
+        trigger_message,
+    ) -> None:
+        deleted = 0
+        bot = context.bot
+        for message_id in list(self._tracked_message_ids):
+            try:
+                await bot.delete_message(
+                    chat_id=self._chat_id,
+                    message_id=message_id,
+                )
+                deleted += 1
+            except TelegramError:
+                pass
+        self._tracked_message_ids.clear()
+
+        if trigger_message is not None:
+            try:
+                await trigger_message.delete()
+            except TelegramError:
+                pass
+
+        logger.info("Chat cleared: %s bot messages deleted", deleted)
+
+        if deleted == 0:
+            notice = await bot.send_message(
+                chat_id=self._chat_id,
+                text="暂无可清理的 Bot 消息（告警推送不会删除）",
+            )
+            self._track_message(notice.message_id)
 
     async def start(self) -> None:
         await self._application.initialize()

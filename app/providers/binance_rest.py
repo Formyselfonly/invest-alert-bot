@@ -12,7 +12,10 @@ from app.services.engine import normalize_interval
 
 logger = logging.getLogger(__name__)
 
-BASE_URL = "https://api.binance.com/api/v3/klines"
+BASE_URLS = {
+    "spot": "https://api.binance.com/api/v3/klines",
+    "futures": "https://fapi.binance.com/fapi/v1/klines",
+}
 
 
 def to_binance_symbol(symbol: str) -> str:
@@ -38,18 +41,31 @@ class BinanceRestClient:
         symbol: str,
         interval: str,
         limit: int = 250,
+        market: str = "spot",
     ) -> list[Kline]:
         if self._session is None:
             msg = "HTTP session is not initialized"
             raise RuntimeError(msg)
 
+        base_url = BASE_URLS.get(market, BASE_URLS["spot"])
         params = {
             "symbol": to_binance_symbol(symbol),
             "interval": normalize_interval(interval),
             "limit": limit,
         }
-        async with self._session.get(BASE_URL, params=params) as resp:
-            resp.raise_for_status()
+        async with self._session.get(base_url, params=params) as resp:
+            if resp.status >= 400:
+                body = await resp.text()
+                msg = (
+                    f"Binance {market} klines failed for {symbol} "
+                    f"{interval}: {resp.status} {body[:200]}"
+                )
+                raise aiohttp.ClientResponseError(
+                    resp.request_info,
+                    resp.history,
+                    status=resp.status,
+                    message=msg,
+                )
             raw = await resp.json()
 
         klines: list[Kline] = []

@@ -22,8 +22,8 @@ KlineUpdateHandler = Callable[
 YF_INTERVAL_MAP = {
     "4h": "1h",
     "1d": "1d",
-    "1w": "1d",
-    "1wk": "1d",
+    "1w": "1wk",
+    "1wk": "1wk",
 }
 
 
@@ -39,25 +39,16 @@ def _resample_to_interval(df: pd.DataFrame, interval: str) -> pd.DataFrame:
                 "Volume": "sum",
             },
         ).dropna()
-    if normalized in {"1w", "1wk"}:
-        return df.resample("1W").agg(
-            {
-                "Open": "first",
-                "High": "max",
-                "Low": "min",
-                "Close": "last",
-                "Volume": "sum",
-            },
-        ).dropna()
+    # 1wk 已用 yfinance 原生周线，无需再 resample
     return df
 
 
 def _yf_period(interval: str) -> str:
     normalized = normalize_interval(interval)
     if normalized == "4h":
-        return "60d"
+        return "730d"   # 足够聚合出 200+ 根 4H K 线
     if normalized in {"1w", "1wk"}:
-        return "2y"
+        return "max"    # 周线需 200+ 周历史（200MA）
     return "1y"
 
 
@@ -65,11 +56,13 @@ class YahooFinancePoller:
     def __init__(
         self,
         symbol: str,
+        yf_ticker: str,
         interval: str,
         poll_seconds: int,
         on_update: KlineUpdateHandler,
     ) -> None:
         self.symbol = symbol
+        self._yf_ticker = yf_ticker
         self.interval = interval
         self.poll_seconds = poll_seconds
         self._on_update = on_update
@@ -103,7 +96,7 @@ class YahooFinancePoller:
             normalize_interval(self.interval),
         )
         period = _yf_period(self.interval)
-        ticker = yf.Ticker(self.symbol)
+        ticker = yf.Ticker(self._yf_ticker)
         df = ticker.history(period=period, interval=yf_interval)
         if df.empty:
             return []

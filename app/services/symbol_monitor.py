@@ -18,6 +18,11 @@ from app.services.engine import (
     supports_touch,
     touch_ratio,
 )
+from app.services.status_format import (
+    INTERVAL_LABELS,
+    MonitorMetrics,
+    build_metrics,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +30,6 @@ AlertCallback = Callable[[AlertEvent], Awaitable[None]]
 MAX_KLINES = 250
 
 INTERVAL_ORDER = {"4h": 0, "1d": 1, "1wk": 2, "1w": 2}
-INTERVAL_LABELS = {"4h": "4H", "1d": "1D", "1wk": "1W", "1w": "1W"}
 
 
 class SymbolMonitor:
@@ -81,6 +85,16 @@ class SymbolMonitor:
         self.current_price = price
         await self._evaluate()
 
+    def get_metrics(self) -> MonitorMetrics | None:
+        if self.indicators is None or self.current_price <= 0:
+            return None
+        return build_metrics(
+            self.symbol,
+            self.interval,
+            self.indicators,
+            self.current_price,
+        )
+
     def format_status_line(self) -> str:
         """Status line: per-interval MA values (not duplicate spot price)."""
         label = INTERVAL_LABELS.get(self.interval.lower(), self.interval)
@@ -131,6 +145,7 @@ class SymbolMonitor:
                     ),
                 )
 
+        touch_events: list[AlertEvent] = []
         if supports_touch(self.interval):
             for alert_type, ratio in check_touch_alerts(
                 self.indicators,
@@ -140,7 +155,7 @@ class SymbolMonitor:
                 pct = ratio * 100
                 touch_pct = self.touch_threshold * 100
                 label = ALERT_TYPE_LABELS[alert_type]
-                events.append(
+                touch_events.append(
                     AlertEvent(
                         symbol=self.symbol,
                         interval=self.interval,
@@ -154,7 +169,8 @@ class SymbolMonitor:
                     ),
                 )
 
-        for event in events:
+        # 先推密集，再推 200 线触碰，避免混在一起
+        for event in events + touch_events:
             if self._alert_manager.should_send(event):
                 logger.info(
                     "Alert triggered: %s %s %s @ %s",
