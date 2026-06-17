@@ -6,6 +6,7 @@ Repository: https://github.com/Formyselfonly/invest-alert-bot
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from app.schemas.market import Indicators
 from app.services.engine import cluster_spread_ratio, touch_ratio
@@ -13,6 +14,16 @@ from app.services.engine import cluster_spread_ratio, touch_ratio
 WATCH_PCT = 2.0  # 摘要里「接近告警」的显示阈值（%）
 
 INTERVAL_LABELS = {"4h": "4H", "1d": "1D", "1wk": "1W", "1w": "1W"}
+
+
+def format_display_timestamp(dt: datetime | None = None) -> str:
+    """UTC timestamp for 【… · time】 headers in status / alert messages."""
+    ts = dt if dt is not None else datetime.now(tz=UTC)
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=UTC)
+    else:
+        ts = ts.astimezone(UTC)
+    return ts.strftime("%Y-%m-%d %H:%M UTC")
 
 
 def format_pct(value: float) -> str:

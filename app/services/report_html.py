@@ -11,6 +11,7 @@ from pathlib import Path
 from app.schemas.alert import SIMULTANEOUS_ALERT_HINT, AlertType
 from app.schemas.analysis import AnalysisResult
 from app.services.analysis_report import extract_summary_excerpt
+from app.services.status_format import format_display_timestamp
 
 
 def _alert_label(alert_type: AlertType | None) -> str:
@@ -28,9 +29,10 @@ def build_summary(result: AnalysisResult) -> str:
         trigger = "手动 /analyze"
 
     decision_preview = extract_summary_excerpt(result.decision.strip())
+    ts = format_display_timestamp()
 
     lines = [
-        "🧠 *【AI 深度解读】*",
+        f"🧠 *【AI 深度解读 · {ts}】*",
         f"`{snap.symbol}` · {snap.interval} · "
         f"触发：{trigger}",
         "",

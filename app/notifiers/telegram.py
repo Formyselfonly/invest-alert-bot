@@ -13,6 +13,7 @@ from telegram.error import TelegramError
 
 from app.schemas.alert import AlertEvent, AlertType
 from app.schemas.config import TelegramConfig
+from app.services.status_format import format_display_timestamp
 
 logger = logging.getLogger(__name__)
 
@@ -23,26 +24,26 @@ INTERVAL_LABELS = {
     "1wk": "1W",
 }
 
-ALERT_HEADERS = {
-    AlertType.CLUSTER: "📊 【均线密集-开仓机会】",
-    AlertType.TOUCH_200_MA: "🎯 【200MA 触碰-抄底机会】",
+ALERT_LABELS: dict[AlertType, tuple[str, str]] = {
+    AlertType.CLUSTER: ("📊", "均线密集-开仓机会"),
+    AlertType.TOUCH_200_MA: ("🎯", "200MA 触碰-抄底机会"),
 }
 
 
 def format_alert_message(event: AlertEvent) -> str:
-    header = ALERT_HEADERS.get(event.alert_type, "🔔 【告警】")
+    emoji, label = ALERT_LABELS.get(event.alert_type, ("🔔", "告警"))
+    ts = format_display_timestamp(event.triggered_at)
+    header = f"{emoji} 【{label} · {ts}】"
     interval = INTERVAL_LABELS.get(
         event.interval.lower(),
         event.interval.upper(),
     )
-    ts = event.triggered_at.strftime("%Y-%m-%d %H:%M UTC")
 
     return (
         f"{header}\n"
         f"`{event.symbol}` · {interval} · "
         f"${event.price:,.2f}\n"
-        f"{event.detail}\n"
-        f"_{ts}_"
+        f"{event.detail}"
     )
 
 

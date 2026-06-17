@@ -27,7 +27,11 @@ from app.services.analysis_context import (
 )
 from app.services.analysis_worker import AnalysisWorker
 from app.services.engine import normalize_interval, supports_touch
-from app.services.status_format import MonitorMetrics, format_pct
+from app.services.status_format import (
+    MonitorMetrics,
+    format_display_timestamp,
+    format_pct,
+)
 from app.services.symbol_monitor import INTERVAL_ORDER, SymbolMonitor
 
 logger = logging.getLogger(__name__)
@@ -95,14 +99,16 @@ class Coordinator:
         return ordered
 
     def format_status(self, symbol_query: str | None = None) -> str:
+        ts = format_display_timestamp()
         if symbol_query:
             symbol = self._resolve_symbol(symbol_query)
             if symbol is None:
                 return f"未找到标的 `{symbol_query}`，试试 `/status BTC`"
-            return self._format_symbol_detail(symbol)
-        return self._format_full_status()
+            body = self._format_symbol_detail(symbol)
+            return f"📡 *【{symbol} 监控 · {ts}】*\n\n{body}"
+        return self._format_full_status(ts)
 
-    def _format_full_status(self) -> str:
+    def _format_full_status(self, ts: str) -> str:
         if not self._monitors:
             return "暂无监控任务"
 
@@ -111,7 +117,7 @@ class Coordinator:
         symbols = self._active_symbols_in_config_order()
 
         lines = [
-            f"📡 *监控状态*（{active}/{total} 活跃）",
+            f"📡 *【监控状态 · {ts}】*（{active}/{total} 活跃）",
             "",
         ]
         for index, symbol in enumerate(symbols):
