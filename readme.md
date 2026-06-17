@@ -1,143 +1,153 @@
-# Invest Alert Bot（抄底王）
+# Invest Alert Bot
 
-一个基于 Python 的高频、低延迟行情监控与告警系统，专注于**均线簇密集度检测**与**关键均线触碰提醒**。满足条件时通过 Telegram 即时推送，辅助交易决策。
+A Python asyncio market monitor and alert system focused on **MA cluster density** and **200MA touch** detection. When conditions are met, it pushes instant Telegram notifications to support trading decisions.
 
-**v0.2 起可选接入 [TradingAgents](https://github.com/TauricResearch/TradingAgents)**：均线规则负责「何时提醒」，TradingAgents 多智能体负责「告警后深度解读」。
+**Since v0.2**, optional integration with [TradingAgents](https://github.com/TauricResearch/TradingAgents): rule-based MAs decide **when** to alert; multi-agent LLM analysis helps interpret **what it might mean** after each alert.
 
-> 当前版本：**v0.2** — 混合数据源 + Telegram 告警 + 可选 TradingAgents AI 分析
+> Current version: **v0.2** — hybrid data sources + Telegram alerts + optional TradingAgents AI analysis
 
----
-
-## 叠甲
-作者本人不碰这个，也不参与这个行业，只玩模拟盘，纯好玩，不构成任何投资建议，只用于作为找工作项目。
-
-## 核心思路
-
-1. **价值投资**，只选有价值的标的，不选无价值标的
-2. **捡漏**，不到捡漏价格绝对不入场，只要标的够多，一定有我们能捡漏的标的
-3. **不输就是赢**，活下来第一
-4. **不信新闻，不信数据，只认均线**，因为均线是靠真金白银堆出来的市场最终结果
+**Languages:** English (this file) · [中文 readme](./readme.zh-CN.md)
 
 ---
 
-## 核心功能
+## Disclaimer
 
-| 功能 | 说明 | 状态 |
-|------|------|------|
-| **均线密集告警** | 20/60/120 的 MA 与 EMA（6 根），**4H / 1D / 1W** spread ≤ 0.8% | ✅ |
-| **200MA 触底告警** | 仅 **1D / 1W**，只看 **200MA**（不看 200EMA），距离 ≤ 1.2% | ✅ |
-| **Telegram 交互** | 全部 `/status`、单标的 `/status BTC`、清屏 | ✅ |
-| **Binance 合约** | 加密货币（BTC、ETH 等）WebSocket 实时 | ✅ |
-| **Nasdaq / Yahoo** | 美股、黄金（GC=F）历史 K 线 + 轮询现价 | ✅ |
-| **Telegram 推送** | 触碰即触发，冷却 + 防抖 | ✅ |
-| **动态配置** | `config.yaml` 管理交易对 | ✅ |
-| **AI 深度解读** | 告警后自动 TradingAgents 分析（可选） | ✅ |
-| **数据库** | 无（v1 纯内存，重启后冷却重置） | — |
+The author does not trade live with this system or work in the finance industry. This is a paper-trading / portfolio project for learning only. **Not financial advice.**
 
 ---
 
-## 监控规则归纳
+## Core Philosophy
 
-每个标的在 **3 个周期**上独立监控；告警按 `标的 + 周期 + 类型` 分别冷却。
-
-**以 BTC/USDT 为例：**
-
-| 检测项 | 4H | 1D | 1W |
-|--------|----|----|-----|
-| 均线密集（20/60/120 MA+EMA 六线 spread ≤ 0.8%） | ✅ | ✅ | ✅ |
-| 200MA 触底（距 200MA ≤ 1.2%） | — | ✅ | ✅ |
-
-> **4H 不做 200MA 触底**；**不看 200EMA**。
-
-**当前 13 个标的**（详见 `config.yaml`）：Crypto 5 个 + 美股/ETF/黄金 8 个。
-
-启动时需 **≥200 根 K 线** 才启用该周期；不足则跳过（如 HYPE 1W、CRCL 1W）。正常约 **37/39** 活跃。
+1. **Value investing** — watch meaningful assets only
+2. **Buy the dip** — no entry until price reaches a “bargain” zone; with enough symbols, something will eventually qualify
+3. **Survival first** — not losing is winning
+4. **Trust the MAs, not headlines** — moving averages reflect where real money has settled
 
 ---
 
-| 层级 | 技术 |
-|------|------|
-| 语言 | Python 3.12+ |
-| 包管理 | [uv](https://docs.astral.sh/uv/) |
-| 行情 | Binance U 本位合约（加密）+ Yahoo Finance（美股/黄金） |
-| 指标计算 | Pandas |
-| 告警推送 | Telegram Bot API |
-| 运行时 | Asyncio |
-| 部署 | Docker + systemd |
+## Features
+
+| Feature | Description | Status |
+|---------|-------------|--------|
+| **MA cluster alerts** | 20/60/120 MA & EMA (6 lines), **4H / 1D / 1W**, spread ≤ 0.8% | ✅ |
+| **200MA touch alerts** | **1D / 1W only**, **200MA only** (not 200EMA), distance ≤ 1.2% | ✅ |
+| **Telegram commands** | `/status`, `/status BTC`, `/clear`, etc. | ✅ |
+| **Binance futures** | Crypto (BTC, ETH, …) via WebSocket | ✅ |
+| **Nasdaq / Yahoo** | US equities & gold (GC=F) — historical bars + polled price | ✅ |
+| **Telegram push** | Touch-triggered, cooldown + debounce | ✅ |
+| **Dynamic config** | Watchlist in `config.yaml` | ✅ |
+| **AI deep-dive** | Auto TradingAgents analysis after alerts (optional) | ✅ |
+| **Database** | None (v1 in-memory; cooldown resets on restart) | — |
 
 ---
 
-## 项目结构
+## Monitoring Rules
+
+Each symbol is monitored independently on **3 timeframes**. Alerts cooldown per `symbol + interval + type`.
+
+**Example: BTC/USDT**
+
+| Check | 4H | 1D | 1W |
+|-------|----|----|-----|
+| MA cluster (6-line spread ≤ 0.8%) | ✅ | ✅ | ✅ |
+| 200MA touch (≤ 1.2% from 200MA) | — | ✅ | ✅ |
+
+> **No 200MA touch on 4H.** **200EMA is not used** for touch alerts.
+
+**13 symbols** today (see `config.yaml`): 5 crypto + 8 US equities/ETFs/gold.
+
+Each interval needs **≥200 closed bars** at startup; otherwise that monitor is skipped (e.g. HYPE 1W, CRCL 1W). Typically **~37/39** monitors are active.
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|------------|
+| Language | Python 3.12+ |
+| Package manager | [uv](https://docs.astral.sh/uv/) |
+| Market data | Binance USDT-M futures (crypto) + Yahoo Finance (equities/gold) |
+| Indicators | Pandas |
+| Alerts | Telegram Bot API |
+| Runtime | Asyncio |
+| Deploy | Docker + systemd |
+
+---
+
+## Project Structure
 
 ```
 invest-alert-bot/
 ├── app/
-│   ├── main.py                 # 入口
-│   ├── core/                   # 配置、日志
-│   ├── schemas/                # Pydantic 数据模型
-│   ├── providers/              # Binance WS/REST, yfinance
-│   ├── services/               # 计算引擎、告警管理、编排
-│   └── notifiers/              # Telegram 推送
+│   ├── main.py                 # Entry point
+│   ├── core/                   # Config, logging
+│   ├── schemas/                # Pydantic models
+│   ├── providers/              # Binance WS/REST, yfinance, TradingAgents
+│   ├── services/               # Engine, alerts, coordinator, analysis worker
+│   └── notifiers/              # Telegram push & commands
 ├── tests/
-├── config.yaml                 # 监控标的与阈值
-├── .env.example                # Telegram 密钥模板
+├── config.yaml                 # Watchlist & thresholds
+├── .env.example                # Telegram & AI keys template
 ├── Dockerfile
 ├── prd.md
 ├── plan.md
-└── readme.md
+└── README.md
 ```
 
 ---
 
-## 系统架构
+## Architecture
 
-### 代码架构图
+### Code layout
 
-单进程 Asyncio 应用，按职责分层：`providers` 拉行情，`services` 算指标与编排，`notifiers` 对接 Telegram。
+Single-process asyncio app: `providers` fetch data, `services` compute & orchestrate, `notifiers` talk to Telegram.
 
 ```mermaid
 flowchart TB
-    subgraph Entry["入口层"]
+    subgraph Entry["Entry"]
         MAIN["app/main.py"]
     end
 
-    subgraph Core["core/ — 基础设施"]
-        CFG["config.py<br/>加载 config.yaml + .env"]
+    subgraph Core["core/ — infrastructure"]
+        CFG["config.py<br/>config.yaml + .env"]
         LOG["logging.py"]
     end
 
-    subgraph Schemas["schemas/ — 数据模型"]
+    subgraph Schemas["schemas/ — models"]
         MK["market.py<br/>Kline · Tick · Indicators"]
         AL["alert.py<br/>AlertEvent · AlertType"]
         SC["config.py<br/>AppConfig · SymbolConfig"]
     end
 
-    subgraph Providers["providers/ — 外部行情"]
-        BREST["binance_rest.py<br/>REST 历史 K 线"]
-        BWS["binance_ws.py<br/>WebSocket 实时流"]
-        YF["yfinance_poll.py<br/>Yahoo 轮询"]
+    subgraph Providers["providers/ — market data"]
+        BREST["binance_rest.py"]
+        BWS["binance_ws.py"]
+        YF["yfinance_poll.py"]
+        TA["tradingagents_client.py"]
     end
 
-    subgraph Services["services/ — 业务逻辑"]
-        COORD["coordinator.py<br/>总编排"]
-        SM["symbol_monitor.py<br/>单标的×周期监控"]
-        ENG["engine.py<br/>MA/EMA 计算 & 触发判定"]
-        AM["alert_manager.py<br/>冷却 & 防抖"]
+    subgraph Services["services/ — business logic"]
+        COORD["coordinator.py"]
+        SM["symbol_monitor.py"]
+        ENG["engine.py"]
+        AM["alert_manager.py"]
+        AW["analysis_worker.py"]
     end
 
-    subgraph Notifiers["notifiers/ — 通知"]
-        TG["telegram.py<br/>推送告警"]
-        TGCMD["telegram_commands.py<br/>/start /status /help"]
+    subgraph Notifiers["notifiers/"]
+        TG["telegram.py"]
+        TGCMD["telegram_commands.py"]
     end
 
-    subgraph External["外部服务（无需 API Key）"]
-        BINREST["Binance REST<br/>api.binance.com"]
-        BINWS["Binance WebSocket<br/>stream.binance.com"]
-        YAHOO["Yahoo Finance<br/>via yfinance"]
+    subgraph External["External (no API key)"]
+        BINREST["Binance REST"]
+        BINWS["Binance WebSocket"]
+        YAHOO["Yahoo Finance"]
     end
 
-    subgraph ExternalAuth["外部服务（需 .env）"]
+    subgraph ExternalAuth["External (requires .env)"]
         TGAPI["Telegram Bot API"]
+        LLM["LLM API (DeepSeek/OpenAI)"]
     end
 
     MAIN --> CFG
@@ -148,96 +158,97 @@ flowchart TB
     SM --> ENG & AM
     SM -->|AlertEvent| COORD
     COORD --> TG
+    COORD --> AW
+    AW --> TA
+    AW --> TG
     TGCMD -->|format_status| COORD
 
     BREST --> BINREST
     BWS --> BINWS
     YF --> YAHOO
+    TA --> LLM
     TG & TGCMD --> TGAPI
-
-    COORD -.-> MK & AL & SC
-    SM -.-> MK & AL
-    ENG -.-> MK & AL
-    BREST & BWS & YF -.-> MK
 ```
 
-| 层级 | 目录 | 职责 |
-|------|------|------|
-| 入口 | `main.py` | 启动 Coordinator + Telegram 命令 Bot，处理 SIGINT/SIGTERM |
-| 编排 | `coordinator.py` | 初始化 Monitor、连接数据源、路由 tick/kline 更新 |
-| 监控 | `symbol_monitor.py` | 每个 `symbol × interval` 独立维护 K 线、指标、现价 |
-| 引擎 | `engine.py` | Pandas 计算 MA/EMA，判定密集 & 触碰 |
-| 告警 | `alert_manager.py` | 同一 `(symbol, interval, type)` 冷却 1h + 60s 防抖 |
-| 行情 | `providers/` | Binance REST/WS、Yahoo 轮询，隔离第三方 API |
-| 通知 | `notifiers/` | Telegram 推送与交互命令 |
+| Layer | Directory | Role |
+|-------|-----------|------|
+| Entry | `main.py` | Start coordinator + Telegram command bot; handle SIGINT/SIGTERM |
+| Orchestration | `coordinator.py` | Init monitors, wire data sources, route tick/kline updates |
+| Monitor | `symbol_monitor.py` | Per `symbol × interval`: bars, indicators, live price |
+| Engine | `engine.py` | Pandas MA/EMA; cluster & touch detection |
+| Alerts | `alert_manager.py` | 1h cooldown + 60s debounce per `(symbol, interval, type)` |
+| Market data | `providers/` | Binance REST/WS, Yahoo polling |
+| Analysis | `analysis_worker.py` | Async queue → TradingAgents → Telegram summary + HTML |
+| Notify | `notifiers/` | Telegram alerts & commands |
 
 ---
 
-### 数据流图
+### Data flow
 
-#### 启动阶段（Bootstrap）
+#### Bootstrap
 
 ```mermaid
 flowchart LR
     A["uv run python -m app.main"] --> B["load_config()"]
     B --> C["Coordinator.start()"]
-    C --> D["Binance REST<br/>拉 250 根历史 K 线"]
-    C --> E["yfinance<br/>拉 250 根历史 K 线"]
+    C --> D["Binance REST<br/>250 historical bars"]
+    C --> E["yfinance<br/>250 historical bars"]
     D --> F["SymbolMonitor.initialize()"]
     E --> F
-    F --> G["calculate_indicators()<br/>需 ≥200 根 K 线"]
-    G --> H["Binance WS 连接<br/>aggTrade + kline"]
-    H --> I["Telegram 发送启动消息"]
+    F --> G["calculate_indicators()<br/>needs ≥200 bars"]
+    G --> H["Binance WS<br/>aggTrade + kline"]
+    H --> I["Telegram startup message"]
 ```
 
-#### 运行阶段（Runtime）
+#### Runtime
 
 ```mermaid
 flowchart TB
-    subgraph Binance["Binance 实时（source: binance）"]
-        WS1["aggTrade 逐笔成交"] -->|实时 price| P["SymbolMonitor.on_price()"]
-        WS2["kline 事件"] -->|is_closed=true| K["SymbolMonitor.on_kline_closed()"]
-        K --> R["重算 MA/EMA"]
+    subgraph Binance["Binance live (source: binance)"]
+        WS1["aggTrade"] -->|live price| P["SymbolMonitor.on_price()"]
+        WS2["kline event"] -->|is_closed=true| K["SymbolMonitor.on_kline_closed()"]
+        K --> R["Recalc MA/EMA"]
         R --> P
     end
 
-    subgraph Yahoo["Yahoo Finance（source: nasdaq / yfinance）"]
-        POLL["每 300s 轮询"] --> U["update_klines()"]
-        U --> R2["重算 MA/EMA"]
-        R2 --> P2["on_price(最新 close)"]
+    subgraph Yahoo["Yahoo Finance (source: nasdaq)"]
+        POLL["Poll every 300s"] --> U["update_klines()"]
+        U --> R2["Recalc MA/EMA"]
+        R2 --> P2["on_price(latest close)"]
     end
 
-    P --> E["_evaluate() 告警判定"]
+    P --> E["_evaluate()"]
     P2 --> E
 
-    E --> C{"密集 or 触碰?"}
-    C -->|否| X["跳过"]
-    C -->|是| D{"AlertManager<br/>冷却 & 防抖?"}
-    D -->|否| X
-    D -->|是| T["TelegramNotifier.send_alert()"]
+    E --> C{"Cluster or touch?"}
+    C -->|No| X["Skip"]
+    C -->|Yes| D{"AlertManager<br/>cooldown & debounce?"}
+    D -->|No| X
+    D -->|Yes| T["TelegramNotifier.send_alert()"]
+    T --> Q["AnalysisWorker.enqueue()<br/>(if AI enabled)"]
 ```
 
-#### 数据源对照
+#### Data sources
 
-| 配置 `source` | 历史 K 线 | 实时价格 | 说明 |
-|---------------|-----------|----------|------|
-| `binance` + `market: futures` | Binance 合约 REST | Binance 合约 WS | 加密货币，如 `BTC/USDT` |
-| `nasdaq` | Yahoo Finance | 轮询最新 close | 美股代码如 `MSFT`；黄金 `XAU` + `ticker: GC=F` |
-| `yfinance` | 同 nasdaq | 同 nasdaq | 与 `nasdaq` 等价，保留兼容 |
+| Config `source` | History | Live price | Notes |
+|-----------------|---------|------------|-------|
+| `binance` + `market: futures` | Binance futures REST | Binance futures WS | Crypto, e.g. `BTC/USDT` |
+| `nasdaq` | Yahoo Finance | Polled close | US tickers like `MSFT`; gold `XAU` + `ticker: GC=F` |
+| `yfinance` | Same as nasdaq | Same as nasdaq | Alias for `nasdaq` |
 
-> 历史 K 线不足 200 根的周期会在启动时跳过（日志可见）。
+> Intervals with fewer than 200 bars are skipped at startup (see logs).
 
 ---
 
-### 算法流程图
+### Algorithm
 
-#### 指标计算
+#### Indicators
 
-基于**已闭合 K 线**的收盘价序列，用 Pandas 滚动/指数加权计算 8 条均线（最少 200 根 K 线才产出指标）。
+Computed from **closed** bar closes (Pandas rolling/EWM). Requires at least 200 bars.
 
 ```mermaid
 flowchart LR
-    KL["Kline[]<br/>最多保留 250 根"] --> DF["DataFrame(close)"]
+    KL["Kline[]<br/>max 250 bars"] --> DF["DataFrame(close)"]
     DF --> MA20["MA 20"]
     DF --> EMA20["EMA 20"]
     DF --> MA60["MA 60"]
@@ -246,99 +257,99 @@ flowchart LR
     DF --> EMA120["EMA 120"]
     DF --> MA200["MA 200"]
     DF --> EMA200["EMA 200"]
-    MA20 & EMA20 & MA60 & EMA60 & MA120 & EMA120 --> IND["Indicators<br/>密集用 6 线"]
+    MA20 & EMA20 & MA60 & EMA60 & MA120 & EMA120 --> IND["Indicators<br/>6 lines for cluster"]
     MA200 --> IND
-    EMA200 -.->|不参与告警| IND
+    EMA200 -.->|not used for alerts| IND
 ```
 
-#### 告警判定（每次价格更新触发）
+#### Alert evaluation (on every price update)
 
-**现价**来自实时 tick（Binance）或轮询 close（yfinance）；**均线**来自已闭合 K 线——触碰检测不等 K 线收盘。
+Live price from Binance tick or Yahoo poll; MAs from closed bars — **touch does not wait for bar close**.
 
 ```mermaid
 flowchart TB
-    START["on_price(current_price)"] --> CHECK{"indicators<br/>已就绪?"}
-    CHECK -->|否| END["跳过"]
-    CHECK -->|是| CLUSTER
+    START["on_price(current_price)"] --> CHECK{"indicators<br/>ready?"}
+    CHECK -->|No| END["Skip"]
+    CHECK -->|Yes| CLUSTER
 
-    subgraph Cluster["均线密集告警（4H / 1D / 1W）"]
-        CLUSTER["取 6 根均线<br/>20/60/120 MA & EMA"]
+    subgraph Cluster["MA cluster (4H / 1D / 1W)"]
+        CLUSTER["6 MAs: 20/60/120 MA & EMA"]
         CLUSTER --> SPREAD["spread = (max - min) / price"]
         SPREAD --> COK{"spread ≤ 0.8%?"}
-        COK -->|是| CE["AlertType.CLUSTER"]
+        COK -->|Yes| CE["AlertType.CLUSTER"]
     end
 
-    subgraph Touch["200MA 触底告警（仅 1D / 1W）"]
-        TMA["touch_ma = |price - 200MA| / price"]
+    subgraph Touch["200MA touch (1D / 1W only)"]
+        TMA["touch = |price - 200MA| / price"]
         TMA --> TOK1{"≤ 1.2%?"}
-        TOK1 -->|是| AE1["AlertType.TOUCH_200_MA"]
+        TOK1 -->|Yes| AE1["AlertType.TOUCH_200_MA"]
     end
 
     CE & AE1 --> AM["AlertManager.should_send()"]
-    AM --> COOL{"距上次同类型告警<br/>≥ cooldown(1h)?"}
-    COOL -->|否| END
-    COOL -->|是| DEDUP{"60s 防抖窗口?"}
-    DEDUP -->|重复| END
-    DEDUP -->|通过| SEND["Telegram 推送"]
+    AM --> COOL{"≥ 1h since last<br/>same-type alert?"}
+    COOL -->|No| END
+    COOL -->|Yes| DEDUP{"60s debounce?"}
+    DEDUP -->|Duplicate| END
+    DEDUP -->|Pass| SEND["Telegram push"]
     SEND --> REC["record_sent()"]
     REC --> END
 ```
 
-#### 公式速查
+#### Formulas
 
-**均线密集**（6 根均线：20/60/120 的 MA + EMA）：
+**MA cluster** (6 lines: 20/60/120 MA + EMA):
 
 ```
-spread = (max(6根均线) - min(6根均线)) / current_price
-触发条件：spread ≤ thresholds.cluster（默认 0.8%）
+spread = (max(6 MAs) - min(6 MAs)) / current_price
+Trigger: spread ≤ thresholds.cluster (default 0.8%)
 ```
 
-**200MA 触底**（仅 1D / 1W，不看 4H，不看 200EMA）：
+**200MA touch** (1D / 1W only; not 4H; not 200EMA):
 
 ```
 touch = abs(current_price - 200MA) / current_price
-触发条件：touch ≤ thresholds.touch（默认 1.2%）
+Trigger: touch ≤ thresholds.touch (default 1.2%)
 ```
 
-| 设计要点 | 说明 |
-|----------|------|
-| 触碰即触发 | 不等 K 线收盘，实时价一到就判定 |
-| 指标基于闭合 K 线 | MA/EMA 不含当前未闭合 bar |
-| 冷却 | 同一 `(symbol, interval, alert_type)` 默认 1 小时不重复推送 |
-| 防抖 | 60 秒内同 key 不重复发送 |
-| 纯内存 | 无数据库，重启后冷却状态重置 |
+| Design choice | Detail |
+|---------------|--------|
+| Touch on live price | No need to wait for bar close |
+| MAs from closed bars | Current incomplete bar excluded |
+| Cooldown | Default 1 hour per `(symbol, interval, alert_type)` |
+| Debounce | No duplicate send within 60s for same key |
+| In-memory state | No DB; cooldown resets on restart |
 
-详细算法与验收标准见 [prd.md](./prd.md)。
+See [prd.md](./prd.md) for full specs and acceptance criteria.
 
 ---
 
-## 完整流程：安装 → 启动 → 验证
+## End-to-end: Install → Run → Verify
 
-本项目是**单进程** Bot（不是 Web API）：一个命令同时跑 **行情监控 + Telegram 命令 +（可选）AI 分析**。
+This is a **single-process bot** (not a web API): one command runs **market monitoring + Telegram commands + (optional) AI analysis**.
 
-### 流程总览
+### Overview
 
 ```mermaid
 flowchart TB
-    subgraph Setup["一次性准备"]
-        A1["安装 uv + clone 项目"]
-        A2["cp .env.example → .env<br/>填 TELEGRAM_*"]
-        A3["可选: uv sync --extra analysis<br/>填 DEEPSEEK_API_KEY"]
+    subgraph Setup["One-time setup"]
+        A1["Install uv + clone repo"]
+        A2["cp .env.example → .env<br/>set TELEGRAM_*"]
+        A3["Optional: uv sync --extra analysis<br/>set DEEPSEEK_API_KEY"]
     end
 
-    subgraph Start["启动 app.main"]
-        B1["加载 config.yaml + .env"]
-        B2["拉历史 K 线 → 初始化 Monitor"]
-        B3["Binance WS + Yahoo 轮询"]
-        B4["Telegram 命令 Bot 上线"]
-        B5["可选: Analysis Worker 后台队列"]
+    subgraph Start["Start app.main"]
+        B1["Load config.yaml + .env"]
+        B2["Fetch history → init monitors"]
+        B3["Binance WS + Yahoo poller"]
+        B4["Telegram command bot online"]
+        B5["Optional: analysis worker queue"]
     end
 
-    subgraph Runtime["运行中"]
-        C1["价格更新 → 算均线 → 判告警"]
-        C2["Telegram 推送告警"]
-        C3["每条告警 → 排队 AI 分析"]
-        C4["分析完成 → 摘要 + HTML 附件"]
+    subgraph Runtime["While running"]
+        C1["Price update → MAs → alert check"]
+        C2["Telegram alert push"]
+        C3["Each alert → enqueue AI job"]
+        C4["Done → summary + HTML attachment"]
     end
 
     A1 --> A2 --> A3 --> B1
@@ -346,145 +357,129 @@ flowchart TB
     B5 --> C1 --> C2 --> C3 --> C4
 ```
 
-### 第一步：安装依赖
+### Step 1: Install dependencies
 
 ```bash
 cd invest-alert-bot
 
-# 基础功能（监控 + 告警，必装）
+# Core (monitoring + alerts — required)
 uv sync
 
-# 若要 AI 分析（TradingAgents + DeepSeek），额外执行：
+# AI analysis (TradingAgents + DeepSeek) — optional
 uv sync --extra analysis
 ```
 
-> **别忘**：只用 `uv sync` 也能正常监控告警；**没装 `--extra analysis` 就没有 AI**，启动消息会提示「未安装」。
+> **`uv sync` alone is enough** for monitoring and alerts. Without `--extra analysis`, AI is disabled and the startup message will say so.
 
-### 第二步：配置环境
+### Step 2: Configure environment
 
 ```bash
 cp .env.example .env
 ```
 
-**最少必填**（监控告警）：
+**Minimum (alerts only):**
 
 ```env
-TELEGRAM_BOT_TOKEN=你的BotFather令牌
-TELEGRAM_CHAT_ID=你的数字ID
+TELEGRAM_BOT_TOKEN=your_botfather_token
+TELEGRAM_CHAT_ID=your_numeric_chat_id
 ```
 
-**若要 AI 分析**，在 `.env` 再加：
+**For AI analysis**, also set:
 
 ```env
 ANALYSIS_ENABLED=true
 LLM_PROVIDER=deepseek
-DEEPSEEK_API_KEY=你的DeepSeek密钥
+DEEPSEEK_API_KEY=your_deepseek_key
 ```
 
-DeepSeek 的 API 地址由 TradingAgents 包内置（`https://api.deepseek.com`），一般**不用**自己配 base URL。监控标的与阈值改 `config.yaml`。
+DeepSeek base URL is built into TradingAgents (`https://api.deepseek.com`). Watchlist and thresholds live in `config.yaml`.
 
-### 第三步：启动
+### Step 3: Run
 
 ```bash
 uv run python -m app.main
 ```
 
-**成功标志：**
+**Success indicators:**
 
-1. 终端无报错，日志类似：
+1. No errors in terminal; logs like:
    - `Coordinator started with XX monitors`
    - `Binance futures WS started`
    - `Equity poller started: MSFT ...`
-   - `Analysis worker started`（若启用 AI）
-2. Telegram 收到启动消息，含监控数量与 `🧠 AI 分析：已启用 (deepseek)` 等状态
-3. 发 `/start` 或 `/status` 有回复
+   - `Analysis worker started` (if AI enabled)
+2. Telegram startup message with monitor count and `🧠 AI analysis: enabled (deepseek)` (or disabled / not installed)
+3. `/start` or `/status` returns a reply
 
-按 `Ctrl+C` 停止。
+Press `Ctrl+C` to stop.
 
-### 第四步：验证（推荐顺序）
+### Step 4: Verification checklist
 
-| # | 验证项 | 命令 / 操作 | 预期结果 |
-|---|--------|-------------|----------|
-| 1 | 单元测试 | `uv run pytest tests/ -v` | 全部 PASS |
-| 2 | 代码检查 | `uv run ruff check app tests` | 无 error |
-| 3 | Telegram 连通 | `uv run python -m app.scripts.test_telegram` | 收到测试消息 |
-| 4 | Bot 在线 | Telegram 发 `/status` | 返回全部标的监控数据 |
-| 5 | 单标的 | `/status MSFT` | 返回 MSFT 各周期密集/200MA |
-| 6 | AI 包已装 | `uv run python -c "import tradingagents; print('ok')"` | 打印 `ok`（未装 AI 可跳过） |
-| 7 | 手动 AI | `/analyze MSFT` | 「分析排队中…」→ 1～5 分钟后摘要 + HTML 附件 |
-| 8 | 告警链路 | 等真实告警或观察日志 `Alert triggered` | 告警推送 → 自动排队 AI（若启用） |
+| # | Check | Command / action | Expected |
+|---|-------|------------------|----------|
+| 1 | Unit tests | `uv run pytest tests/ -v` | All PASS |
+| 2 | Lint | `uv run ruff check app tests` | No errors |
+| 3 | Telegram | `uv run python -m app.scripts.test_telegram` | Test message received |
+| 4 | Bot online | Send `/status` | Full watchlist status |
+| 5 | Single symbol | `/status MSFT` | MSFT per-interval cluster / 200MA |
+| 6 | AI package | `uv run python -c "import tradingagents; print('ok')"` | Prints `ok` (skip if no AI) |
+| 7 | Manual AI | `/analyze MSFT` | “Queued…” → summary + HTML in 1–5 min |
+| 8 | Alert → AI | Wait for real alert or watch logs | Alert push → auto AI queue (if enabled) |
 
-**日志位置**：`logs/app.log`（可在 `config.yaml` 的 `logging` 段调整）。
+**Logs:** `logs/app.log` (configure in `config.yaml` → `logging`)
 
-**AI 报告位置**：`reports/report_*.html`（Telegram 也会发同名附件）。
+**AI reports:** `reports/report_*.html` (also sent as Telegram attachments)
 
-### 常见问题
+### Troubleshooting
 
-| 现象 | 原因 | 处理 |
-|------|------|------|
-| 启动报 `TELEGRAM_* missing` | `.env` 未填 | 按 `.env.example` 补全 |
-| AI 显示「未安装」 | 没跑 `uv sync --extra analysis` | 执行后重启 |
-| AI 显示「未启用」 | `ANALYSIS_ENABLED=false` | 改为 `true` 并填 `DEEPSEEK_API_KEY` |
-| `/status` 有 `nan%` | Yahoo 未收盘 K 线（已修复） | 更新代码并重启 |
-| 部分周期被跳过 | K 线不足 200 根 | 看启动日志 `Skip monitor`，属正常 |
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| `TELEGRAM_* missing` on start | Empty `.env` | Fill per `.env.example` |
+| AI shows “not installed” | Missing `--extra analysis` | Run `uv sync --extra analysis`, restart |
+| AI shows “disabled” | `ANALYSIS_ENABLED=false` | Set `true` + `DEEPSEEK_API_KEY` |
+| `nan%` in `/status` | Incomplete Yahoo bars | Update code & restart (fixed in current version) |
+| Some intervals skipped | &lt;200 bars | Check startup log `Skip monitor` — expected for new listings |
 
 ---
 
-## 快速开始
+## Quick Start
 
-### 第一步：创建 Telegram Bot（只需做一次）
+### Create a Telegram bot (one-time)
 
-你需要两个东西：**Bot Token** 和 **Chat ID**。
+You need a **Bot Token** and **Chat ID**.
 
-#### 1. 用 BotFather 创建 Bot
+#### 1. BotFather
 
-1. 在 Telegram 搜索 **[@BotFather](https://t.me/BotFather)**，打开对话
-2. 发送 `/newbot`
-3. 按提示输入 Bot 显示名称，例如：`Invest Alert Bot`
-4. 输入 Bot 用户名（必须以 `bot` 结尾），例如：`my_invest_alert_bot`
-5. 创建成功后，BotFather 会返回一串 **Token**，格式类似：
+1. Open [@BotFather](https://t.me/BotFather) in Telegram
+2. Send `/newbot`
+3. Choose a display name, e.g. `Invest Alert Bot`
+4. Choose a username ending in `bot`, e.g. `my_invest_alert_bot`
+5. Copy the **token** → `TELEGRAM_BOT_TOKEN`
 
-   ```
-   7123456789:AAHxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-   ```
+#### 2. Chat ID
 
-   复制保存，这就是 `TELEGRAM_BOT_TOKEN`。
-
-#### 2. 获取你的 Chat ID
-
-**方法 A（推荐）：自动脚本**
+**Option A (recommended):**
 
 ```bash
 uv run python -m app.scripts.get_chat_id
 ```
 
-按提示给 Bot 发一条消息，脚本会打印 `TELEGRAM_CHAT_ID`。
+Send your bot a message when prompted; the script prints `TELEGRAM_CHAT_ID`.
 
-**方法 B：@userinfobot**
+**Option B:** [@userinfobot](https://t.me/userinfobot) → copy numeric **Id**
 
-1. Telegram 搜索 **@userinfobot**，点 Start
-2. 复制返回的 **Id**（纯数字）
+**Option C:** Browser `getUpdates`
 
-**方法 C：浏览器 getUpdates**
+1. Message your bot (`/start`)
+2. Visit `https://api.telegram.org/bot<TOKEN>/getUpdates`
+3. Find `"chat":{"id":123456789}`
 
-1. 先给 Bot 发 `/start` 或任意消息
-2. 访问（把 Token 换进去）：
+> Empty `"result":[]`? Message the correct bot, or call `deleteWebhook` first.
 
-   ```
-   https://api.telegram.org/bot<TOKEN>/getUpdates
-   ```
-
-3. 找 `"chat":{"id":123456789}`
-
-> 若 `getUpdates` 返回 `"result":[]`：确认消息已发给**正确的 Bot**，或先访问 `deleteWebhook` 再试。
-
-#### 3. 写入 `.env`
+#### 3. Write `.env`
 
 ```bash
 cp .env.example .env
 ```
-
-编辑 `.env`：
 
 ```env
 TELEGRAM_BOT_TOKEN=7123456789:AAHxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
@@ -493,81 +488,79 @@ TELEGRAM_CHAT_ID=123456789
 
 ---
 
-### 第二步：安装与配置
+### Install & configure
 
 ```bash
-# 安装 uv（如未安装）
+# Install uv if needed
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-git clone https://github.com/your-org/invest-alert-bot.git
+git clone https://github.com/Formyselfonly/invest-alert-bot.git
 cd invest-alert-bot
 
-# 安装依赖（见上方「完整流程」；要 AI 则加 --extra analysis）
 uv sync
-# uv sync --extra analysis
+# uv sync --extra analysis   # if you want AI
 ```
 
-编辑 `config.yaml`，配置要监控的标的：
+Edit `config.yaml`:
 
 ```yaml
 symbols:
-  # 加密货币 — Binance 合约
+  # Crypto — Binance futures
   - symbol: BTC/USDT
     source: binance
     market: futures
     intervals: [4h, 1d, 1wk]
 
-  # 美股 — Nasdaq（Yahoo Finance）
+  # US equity — Yahoo Finance
   - symbol: MSFT
     source: nasdaq
     intervals: [4h, 1d, 1wk]
 
-  # 黄金 — COMEX 期货
+  # Gold — COMEX futures
   - symbol: XAU
     source: nasdaq
     ticker: GC=F
     intervals: [4h, 1d, 1wk]
 
 thresholds:
-  cluster: 0.008   # 密集 0.8%
-  touch: 0.012     # 200MA 触底 1.2%
+  cluster: 0.008   # 0.8% cluster width
+  touch: 0.012     # 1.2% from 200MA
 ```
 
 ---
 
-## 怎么运行？（没有 FastAPI）
+## How to run (no FastAPI)
 
-本项目**不是 Web API**。启动与验证步骤见上方 **[完整流程：安装 → 启动 → 验证](#完整流程安装--启动--验证)**。
+This project is **not a web API**. One command keeps the bot alive:
 
 ```bash
 uv run python -m app.main
 ```
 
-程序在跑 = Bot 在线；关掉终端 = Bot 离线。
+Process running = bot online. Close the terminal = bot offline.
+
+Telegram-only smoke test (no full monitor): `uv run python -m app.scripts.test_telegram`
 
 ---
 
-### Telegram 命令（运行中）
+### Telegram commands
 
-| 命令 | 作用 |
-|------|------|
-| `/start` | 欢迎与按钮菜单 |
-| `/status` | 全部标的 × 周期 |
-| `/status BTC` | 单标的 |
-| `/analyze MSFT` | 手动 AI 深度分析（需启用 AI） |
-| `/clear` | 清屏（不删告警） |
-| `/help` | 帮助 |
+| Command | Action |
+|---------|--------|
+| `/start` | Welcome & menu |
+| `/status` | All symbols × intervals |
+| `/status BTC` | Single symbol |
+| `/analyze MSFT` | Manual AI analysis (requires AI enabled) |
+| `/clear` | Clear chat (does not reset alerts) |
+| `/help` | Help |
 
-**告警推送**：`📊 【均线密集-开仓机会】` / `🎯 【200MA 触碰-抄底机会】`  
-**告警后**（若启用 AI）：自动 `🧠 分析排队中…` → 摘要 + HTML 附件。
+**Alert titles:** `📊 MA cluster — entry opportunity` / `🎯 200MA touch — dip opportunity`
 
-> 若只想验证 Telegram（不启动监控）：`uv run python -m app.scripts.test_telegram`
-
-按 `Ctrl+C` 停止。
+**After alerts** (if AI enabled): auto `🧠 Analysis queued…` → summary + HTML attachment.
 
 ---
 
-### 单元测试
+### Tests
 
 ```bash
 uv run pytest tests/ -v
@@ -576,45 +569,37 @@ uv run ruff check app tests
 
 ---
 
-## 告警消息示例
+## Sample alert
 
 ```
 📊 Invest Alert Bot
 ━━━━━━━━━━━━━━━
-告警类型: 均线密集
-资产: BTC/USDT
-周期: 4H
-当前价: $67,432.5000
-详情: 密集宽度 0.62% (阈值 0.8%)
-时间: 2026-06-16 14:32:08 UTC
+Alert: MA cluster
+Asset: BTC/USDT
+Interval: 4H
+Price: $67,432.5000
+Detail: Cluster width 0.62% (threshold 0.8%)
+Time: 2026-06-16 14:32:08 UTC
 ```
 
 ---
 
-## 告警逻辑速览
+## Configuration reference
 
-算法流程图见上方 [算法流程图](#算法流程图) 章节。核心规则：
-
-- **触碰即触发**，不等 K 线收盘
-- MA/EMA 基于已闭合 K 线计算，实时价用于比较
-- 同一告警默认 **1 小时冷却** + **60 秒防抖**，避免刷屏
-
----
-
-## 配置说明
-
-| 配置项 | 文件 | 说明 |
-|--------|------|------|
-| `TELEGRAM_BOT_TOKEN` | `.env` | BotFather 给的 Token |
-| `TELEGRAM_CHAT_ID` | `.env` | 你的 Telegram 用户 ID |
-| `symbols` | `config.yaml` | 监控标的列表 |
-| `thresholds.cluster` | `config.yaml` | 密集阈值，默认 0.008 (0.8%) |
-| `thresholds.touch` | `config.yaml` | 200MA 触底阈值，默认 0.012 (1.2%) |
-| `alert.cooldown_seconds` | `config.yaml` | 冷却时间，默认 3600 秒 |
+| Setting | File | Description |
+|---------|------|-------------|
+| `TELEGRAM_BOT_TOKEN` | `.env` | From BotFather |
+| `TELEGRAM_CHAT_ID` | `.env` | Your Telegram user ID |
+| `ANALYSIS_ENABLED` | `.env` | Enable TradingAgents queue |
+| `LLM_PROVIDER` | `.env` | e.g. `deepseek`, `openai` |
+| `symbols` | `config.yaml` | Watchlist |
+| `thresholds.cluster` | `config.yaml` | Default `0.008` (0.8%) |
+| `thresholds.touch` | `config.yaml` | Default `0.012` (1.2%) |
+| `alert.cooldown_seconds` | `config.yaml` | Default `3600` |
 
 ---
 
-## Docker 部署
+## Docker
 
 ```bash
 docker build -t invest-alert-bot .
@@ -627,43 +612,41 @@ docker run -d \
   invest-alert-bot
 ```
 
-推荐部署在**始终在线的 VM**（AWS EC2 / Lightsail），不适合 Serverless。
+Best on an **always-on VM** (AWS EC2 / Lightsail). Not suited to serverless.
 
 ---
 
-## 与 TradingAgents 的关系
+## Relationship to TradingAgents
 
-本项目是 **[TradingAgents](https://github.com/TauricResearch/TradingAgents)** 的**下游集成项目**（consumer / integration），不是 TradingAgents 官方仓库的分叉。
+This repo is a **downstream integration** of [TradingAgents](https://github.com/TauricResearch/TradingAgents) — not a fork of the upstream project.
 
-| | TradingAgents（上游） | Invest Alert Bot（本项目） |
-|---|----------------------|---------------------------|
-| 定位 | 多智能体 LLM 金融研究框架 | 7×24 均线监控 + Telegram 告警 Bot |
-| 触发方式 | CLI / 代码手动 `propagate(ticker, date)` | **每条告警自动排队** + `/analyze` 手动 |
-| 延迟 | 分钟级 | 告警秒级；AI 分析异步 1～5 分钟 |
-| 核心逻辑 | 基本面 / 情绪 / 新闻 / 多空辩论 | **规则化均线**（密集 + 200MA） |
-| 接入方式 | Python 包 `tradingagents` | `uv sync --extra analysis` |
+| | TradingAgents (upstream) | Invest Alert Bot (this repo) |
+|---|--------------------------|------------------------------|
+| Role | Multi-agent LLM financial research framework | 24/7 MA monitor + Telegram alert bot |
+| Trigger | CLI / manual `propagate(ticker, date)` | **Auto-queue on every alert** + `/analyze` |
+| Latency | Minutes | Alerts in seconds; AI async 1–5 min |
+| Core logic | Fundamentals, sentiment, news, debate | **Rule-based MAs** (cluster + 200MA) |
+| Install | `pip install tradingagents` | `uv sync --extra analysis` |
 
-### 本项目中 TradingAgents 用在哪
+### Where TradingAgents runs in this project
 
 ```
-告警推送 (Telegram)
+Telegram alert
        ↓
-AnalysisWorker 队列
+AnalysisWorker queue
        ↓
 app/providers/tradingagents_client.py
        ↓
-TradingAgentsGraph.propagate(ticker, date)   # 官方 API
+TradingAgentsGraph.propagate(ticker, date)
        ↓
-Telegram 摘要 + reports/*.html 附件
+Telegram summary + reports/*.html attachment
 ```
 
-- 封装代码：`app/providers/tradingagents_client.py`
-- 设计文档：[tradingagents-iteration.md](./tradingagents-iteration.md)
-- LLM 默认：`LLM_PROVIDER=deepseek`（亦支持 OpenAI 等 TradingAgents 已支持 provider）
+- Wrapper: `app/providers/tradingagents_client.py`
+- Design doc: [tradingagents-iteration.md](./tradingagents-iteration.md)
+- Default LLM: `LLM_PROVIDER=deepseek` (OpenAI and other upstream providers also work)
 
-### 引用 TradingAgents 论文
-
-若在 README / 简历 / 其他文档中引用上游框架，可使用：
+### Citing TradingAgents
 
 ```bibtex
 @misc{xiao2025tradingagentsmultiagentsllmfinancial,
@@ -677,89 +660,72 @@ Telegram 摘要 + reports/*.html 附件
 }
 ```
 
-### 如何与 TradingAgents 官方建立关联（让你项目「被看见」）
+### Getting visibility with the upstream project
 
-你**不必**把整个 Bot 合进 TradingAgents 才能建立关系。常见做法从易到难：
-
-| 方式 | 做什么 | 适合场景 |
-|------|--------|----------|
-| **1. 本 README + Star** | 保留本文「与 TradingAgents 的关系」并 Star 上游仓库 | 最低成本，简历/作品集可写「基于 TradingAgents」 |
-| **2. 开 Issue（Showcase）** | 到 [TradingAgents Issues](https://github.com/TauricResearch/TradingAgents/issues) 发 **Showcase / Integration** 帖，标题如 `Showcase: Invest Alert Bot — alert-driven Telegram + TradingAgents`，附上本仓库链接与架构说明 | **最推荐**：不改上游代码，官方和社区能看到你的用例 |
-| **3. 提 PR（文档/示例）** | 向上游提 **小 PR**：例如在 `README.md` 增加 “Community Projects” 一行链到你 repo；或 `examples/alert_bot_integration.md` 写 50 行「如何用 propagate 接告警 Bot」 | 你有精力且 PR 只改文档/示例时 |
-| **4. Discord / 社区** | TradingAgents README 里有 [Discord](https://github.com/TauricResearch/TradingAgents) 链接，可在 `#showcase` 或等价频道分享 | 快速曝光 |
-| **5. 不建议** | 把 invest-alert-bot 整仓 PR 进 TradingAgents | 体量大、职责不同，维护者一般不会合 |
-
-**Issue 模板示例**（复制到 TradingAgents 仓库 New Issue）：
-
-```markdown
-## Showcase: Invest Alert Bot (alert-driven integration)
-
-- **Repo**: https://github.com/Formyselfonly/invest-alert-bot
-- **What**: 7×24 MA cluster / 200MA touch alerts via Telegram; **every alert auto-enqueues** TradingAgents analysis; delivers summary + HTML report.
-- **Integration**: `pip`/uv optional extra → `TradingAgentsGraph.propagate()` in async worker; DeepSeek/OpenAI via official provider config.
-- **Why useful**: Shows event-driven (not CLI-only) use of TradingAgents on real watchlists (crypto + US equities + gold).
-
-Happy to adjust docs or add a minimal example PR if maintainers are interested.
-```
-
-若上游接受 **Community Projects** 列表，你的项目就会出现在他们的 README 里，关联最强。
+| Approach | Action |
+|----------|--------|
+| **README + Star** | Keep this section; star [TradingAgents](https://github.com/TauricResearch/TradingAgents) |
+| **Showcase Issue** | Open an issue on upstream with repo link & architecture — good for community discovery |
+| **Docs PR** | Propose a “Community Projects” line or minimal `examples/` snippet upstream |
+| **Discord** | Share in upstream Discord showcase channel |
 
 ---
 
-## 启用 AI 分析（TradingAgents）
+## Enable AI analysis (TradingAgents)
 
-> **重要**：不安装 AI 依赖时，监控与告警 **完全正常**；只有 AI 深度解读不会运行。
+> **Important:** Monitoring and alerts work **without** AI dependencies. Only the deep-dive analysis is skipped.
 
-### 1. 安装可选依赖
+### 1. Optional dependency
 
 ```bash
 uv sync --extra analysis
 ```
 
-### 2. 配置 `.env`
-
-复制 `.env.example` 中 **AI 分析** 段落，至少设置：
+### 2. `.env`
 
 ```env
 ANALYSIS_ENABLED=true
 LLM_PROVIDER=deepseek
-DEEPSEEK_API_KEY=你的密钥
+DEEPSEEK_API_KEY=your_key
 ```
 
-DeepSeek 使用 OpenAI 兼容 API（endpoint 由 TradingAgents 内置 `https://api.deepseek.com`）。若用 OpenAI，改 `LLM_PROVIDER=openai` 并填 `OPENAI_API_KEY`。
+DeepSeek uses OpenAI-compatible API (endpoint built into TradingAgents). For OpenAI: `LLM_PROVIDER=openai` + `OPENAI_API_KEY`.
 
-### 3. 行为说明
+### 3. Behavior
 
-| 事件 | 行为 |
-|------|------|
-| **任意告警推送后** | 自动排队 TradingAgents 分析（1～5 分钟） |
-| 分析开始 | Telegram 提示「分析排队中…」 |
-| 分析完成 | **摘要消息** + **HTML 报告附件** |
-| `/analyze MSFT` | 手动触发（不依赖告警） |
+| Event | Behavior |
+|-------|----------|
+| **After any alert** | Auto-queue TradingAgents analysis (1–5 min) |
+| Analysis starts | Telegram: “Analysis queued…” |
+| Analysis done | **Summary message** + **HTML report attachment** |
+| `/analyze MSFT` | Manual trigger (no alert required) |
 
-报告 HTML 保存在本地 `reports/` 目录，Telegram 中点击附件可在浏览器打开全文。
+Reports are saved under `reports/` and attached in Telegram.
 
-启动消息会显示：`🧠 AI 分析：已启用 (deepseek)` 或 `未启用` / `未安装`。
+Startup message shows: `🧠 AI analysis: enabled (deepseek)` or `disabled` / `not installed`.
 
-详见 [tradingagents-iteration.md](./tradingagents-iteration.md)。
+Details: [tradingagents-iteration.md](./tradingagents-iteration.md).
 
 ---
 
-## 文档
+## Documentation
 
-| 文档 | 说明 |
-|------|------|
-| [prd.md](./prd.md) | 产品需求、验收标准 |
-| [plan.md](./plan.md) | 开发计划、模块设计 |
-| [tradingagents-iteration.md](./tradingagents-iteration.md) | TradingAgents 接入设计与路线图 |
-| [TradingAgents 上游](https://github.com/TauricResearch/TradingAgents) | 官方多智能体框架仓库 |
+| Doc | Description |
+|-----|-------------|
+| [readme.zh-CN.md](./readme.zh-CN.md) | Chinese README |
+| [prd.md](./prd.md) | Product requirements & acceptance |
+| [plan.md](./plan.md) | Development plan |
+| [tradingagents-iteration.md](./tradingagents-iteration.md) | TradingAgents integration design |
+| [TradingAgents upstream](https://github.com/TauricResearch/TradingAgents) | Official multi-agent framework |
 
 ---
 
 ## License
 
-仅供个人学习使用，禁止他人商用，作者是https://github.com/Formyselfonly
+Personal learning use only. Commercial use by others is not permitted.
 
-b站：郑同学是我
+Author: https://github.com/Formyselfonly
 
-合作或者需要付费完整版，请联系作者
+Bilibili: 郑同学是我
+
+For collaboration or a paid full version, contact the author.
