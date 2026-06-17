@@ -743,6 +743,56 @@ Reports are saved under `reports/` and attached in Telegram.
 
 Startup message shows: `🧠 AI analysis: enabled (deepseek)` or `disabled` / `not installed`.
 
+### 4. How to read the analysis output
+
+#### What’s in the HTML report
+
+After analysis completes, Telegram sends a **summary message** plus an **HTML attachment**. Typical sections:
+
+| Section | Content |
+|---------|---------|
+| **Bot snapshot** | Price, MAs, cluster width, 200MA distance (ground truth — AI must not invent prices) |
+| **Overall rating** | Final label, e.g. `Hold` |
+| **Portfolio Manager decision** | Full write-up (Executive Summary, stop/add conditions, etc.) |
+| **Market analysis** | TradingAgents technical view (MACD, RSI, MAs, …) |
+| **News & macro** | Ticker news + Fed / macro headlines |
+| **Fundamentals** | Financials, valuation, cash flow (stocks / ETFs) |
+| **Trader plan** | Trading stance summary |
+| **Bull/Bear debate & risk review** | Debate conclusions |
+
+The Telegram summary prefers the **Executive Summary**; use the HTML attachment for the full report.
+
+#### What the final rating means (Buy / Hold / Sell…)
+
+After all analysts, debate, and risk review, the **Portfolio Manager** outputs a **5-tier rating** (most bullish → most bearish):
+
+| Rating | Meaning (research view — not a trade order) |
+|--------|---------------------------------------------|
+| **Buy** | Strong bullish — add / open position |
+| **Overweight** | Bullish — above benchmark weight |
+| **Hold** | **Neutral — maintain status quo**; no add, no cut; wait and watch |
+| **Underweight** | Bearish — below benchmark weight |
+| **Sell** | Strong bearish — reduce / exit |
+
+**`Hold` does not mean “no analysis” or “analysis failed”.** It means the AI sees offsetting bull/bear factors: **not worth buying actively, not worth selling actively** — keep current exposure.
+
+Example (MSFT far below 200MA): decent fundamentals + weak technicals → often `Hold` (stay at benchmark weight; consider adds only after a confirmed reclaim of key levels).
+
+#### How this relates to Bot MA alerts
+
+| Layer | Says what |
+|-------|-----------|
+| **Bot alert** | “Price hit a rule level — time to look” — **rule trigger** (seconds) |
+| **AI rating** | “After review, is it worth acting?” — **research conclusion** (minutes) |
+
+Division of labor:
+
+- Bot cluster / 200MA rules remain the **only automatic alert source**
+- AI does **not** change alert thresholds and does **not** place orders
+- `Hold` means: the alert is worth attention, but AI does not support adding or cutting right now
+
+> Disclaimer: AI output is for research only, not investment advice. You may compare it with your MA strategy; `Hold` is not a hard ban on trading.
+
 Details: [tradingagents-iteration.md](./tradingagents-iteration.md).
 
 ---

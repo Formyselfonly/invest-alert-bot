@@ -10,6 +10,7 @@ from datetime import UTC, date, datetime
 from app.core.analysis_env import AnalysisEnv
 from app.schemas.analysis import AnalysisJob, AnalysisResult
 from app.services.analysis_context import build_briefing
+from app.services.analysis_report import compose_decision_text
 
 logger = logging.getLogger(__name__)
 
@@ -49,10 +50,10 @@ class TradingAgentsClient:
         )
         analysis_date = date.today().isoformat()
         started = time.monotonic()
-        raw_state, decision = ta.propagate(job.ta_ticker, analysis_date)
+        raw_state, rating = ta.propagate(job.ta_ticker, analysis_date)
         elapsed = time.monotonic() - started
 
-        decision_text = _stringify_decision(decision)
+        decision_text = compose_decision_text(raw_state, str(rating))
         if briefing not in decision_text:
             decision_text = f"{briefing}\n\n---\n\n{decision_text}"
 
@@ -67,6 +68,7 @@ class TradingAgentsClient:
 
 
 def _stringify_decision(decision: object) -> str:
+    """Legacy helper kept for tests / callers that pass pre-rendered decisions."""
     if decision is None:
         return "（TradingAgents 未返回 decision）"
     if isinstance(decision, str):

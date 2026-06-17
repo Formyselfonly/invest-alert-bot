@@ -7,6 +7,7 @@ from pathlib import Path
 
 from app.schemas.alert import SIMULTANEOUS_ALERT_HINT, AlertType
 from app.schemas.analysis import AnalysisResult
+from app.services.analysis_report import extract_summary_excerpt
 
 
 def _alert_label(alert_type: AlertType | None) -> str:
@@ -23,9 +24,7 @@ def build_summary(result: AnalysisResult) -> str:
     if result.job.trigger.value == "manual":
         trigger = "手动 /analyze"
 
-    decision_preview = result.decision.strip()
-    if len(decision_preview) > 400:
-        decision_preview = decision_preview[:400] + "…"
+    decision_preview = extract_summary_excerpt(result.decision.strip())
 
     lines = [
         "🧠 *【AI 深度解读】*",
