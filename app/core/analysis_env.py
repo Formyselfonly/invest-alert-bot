@@ -8,6 +8,31 @@ from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
+_VALID_ANALYSTS = frozenset({"market", "social", "news", "fundamentals"})
+_DEFAULT_ANALYSTS = ("market", "news", "fundamentals")
+
+
+def parse_selected_analysts(raw: str | None) -> tuple[str, ...]:
+    """Parse ``ANALYSIS_ANALYSTS`` env value.
+
+    Default drops ``social`` (Reddit often 403; overlaps with news).
+    """
+    if raw is None or not raw.strip():
+        return _DEFAULT_ANALYSTS
+
+    parts = [part.strip().lower() for part in raw.split(",") if part.strip()]
+    invalid = [part for part in parts if part not in _VALID_ANALYSTS]
+    if invalid:
+        logger.warning("Ignoring invalid ANALYSIS_ANALYSTS entries: %s", invalid)
+    selected = tuple(part for part in parts if part in _VALID_ANALYSTS)
+    if not selected:
+        logger.warning(
+            "ANALYSIS_ANALYSTS resolved to empty list; using default %s",
+            _DEFAULT_ANALYSTS,
+        )
+        return _DEFAULT_ANALYSTS
+    return selected
+
 
 def _env_bool(key: str, default: bool = False) -> bool:
     raw = os.getenv(key)
@@ -23,6 +48,7 @@ class AnalysisEnv:
     deep_model: str
     quick_model: str
     max_debate_rounds: int
+    selected_analysts: tuple[str, ...]
     timeout_seconds: int
     reports_dir: str
     package_installed: bool
@@ -58,8 +84,11 @@ class AnalysisEnv:
             max_debate_rounds=int(
                 os.getenv("ANALYSIS_MAX_DEBATE_ROUNDS", "1"),
             ),
+            selected_analysts=parse_selected_analysts(
+                os.getenv("ANALYSIS_ANALYSTS"),
+            ),
             timeout_seconds=int(
-                os.getenv("ANALYSIS_TIMEOUT_SECONDS", "300"),
+                os.getenv("ANALYSIS_TIMEOUT_SECONDS", "1800"),
             ),
             reports_dir=os.getenv("ANALYSIS_REPORTS_DIR", "reports"),
             package_installed=installed,

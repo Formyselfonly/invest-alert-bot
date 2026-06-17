@@ -413,7 +413,7 @@ uv run python -m app.main
 | 4 | Bot 在线 | Telegram 发 `/status` | 返回全部标的监控数据 |
 | 5 | 单标的 | `/status MSFT` | 返回 MSFT 各周期密集/200MA |
 | 6 | AI 包已装 | `uv run python -c "import tradingagents; print('ok')"` | 打印 `ok`（未装 AI 可跳过） |
-| 7 | 手动 AI | `/analyze MSFT` | 「分析排队中…」→ 1～5 分钟后摘要 + HTML 附件 |
+| 7 | 手动 AI | `/analyze MSFT` | 「分析排队中…」→ 约 5～20 分钟后摘要 + HTML 附件 |
 | 8 | 告警链路 | 等真实告警或观察日志 `Alert triggered` | 告警推送 → 自动排队 AI（若启用） |
 
 **日志位置**：`logs/app.log`（可在 `config.yaml` 的 `logging` 段调整）。
@@ -641,23 +641,54 @@ docker run -d \
 |---|----------------------|---------------------------|
 | 定位 | 多智能体 LLM 金融研究框架 | 7×24 均线监控 + Telegram 告警 Bot |
 | 触发方式 | CLI / 代码手动 `propagate(ticker, date)` | **每条告警自动排队** + `/analyze` 手动 |
-| 延迟 | 分钟级 | 告警秒级；AI 分析异步 1～5 分钟 |
+| 延迟 | 分钟级 | 告警秒级；AI 分析异步 5～20 分钟 |
 | 核心逻辑 | 基本面 / 情绪 / 新闻 / 多空辩论 | **规则化均线**（密集 + 200MA） |
 | 接入方式 | Python 包 `tradingagents` | `uv sync --extra analysis` |
 
 ### 本项目中 TradingAgents 用在哪
 
+**分工**：Bot 负责「什么时候看」（秒级规则告警）；TradingAgents 负责「怎么看、值不值得动手」（分钟级多智能体研究）。均线仍是**唯一自动告警源**，AI 不修改阈值、不自动下单。
+
+#### 端到端流程
+
+```mermaid
+flowchart TD
+    A["告警推送 或 /analyze MSFT"] --> B["Coordinator 选取 monitor\n优先 1d 周期"]
+    B --> C["build_snapshot()\n打包现价 + 均线 + 告警上下文"]
+    C --> D["AnalysisWorker 后台队列\n不阻塞 Binance WS"]
+    D --> E["TradingAgentsClient.run()\n在线程池同步执行"]
+    E --> F["build_briefing()\n注入 Bot 均线快照防幻觉"]
+    F --> G["TradingAgentsGraph.propagate(ticker, date)"]
+
+    G --> H1["Market Analyst\nyfinance 行情 + 技术指标 + LLM"]
+    H1 --> H2["Sentiment Analyst\n新闻 + StockTwits + Reddit + LLM"]
+    H2 --> H3["News Analyst\n新闻 + 宏观 + 内幕交易 + LLM"]
+    H3 --> H4["Fundamentals Analyst\n财报三表 + LLM"]
+    H4 --> I["Bull ↔ Bear 多空辩论\nANALYSIS_MAX_DEBATE_ROUNDS"]
+    I --> J["Research Manager + Trader + LLM"]
+    J --> K["激进 / 保守 / 中性 风险辩论 + LLM"]
+    K --> L["Portfolio Manager\nBUY / HOLD / SELL + LLM"]
+
+    L --> M["拼接 Bot 快照 + 决策文本"]
+    M --> N["write_html_report() → reports/"]
+    N --> O["Telegram 摘要 + HTML 附件"]
 ```
-告警推送 (Telegram)
-       ↓
-AnalysisWorker 队列
-       ↓
-app/providers/tradingagents_client.py
-       ↓
-TradingAgentsGraph.propagate(ticker, date)   # 官方 API
-       ↓
-Telegram 摘要 + reports/*.html 附件
-```
+
+#### 结果取决于什么
+
+| 来源 | 内容 | 确定性 |
+|------|------|--------|
+| **Invest Alert Bot** | 现价、MA20/60/120/200、密集度、200MA 距离、触发告警 | 高（实时 K 线计算） |
+| **TradingAgents / yfinance** | 行情、MACD/RSI、财报、新闻 | 中（外部 API） |
+| **TradingAgents / StockTwits** | 散户 Bullish/Bearish 情绪 | 中 |
+| **TradingAgents / Reddit** | r/wallstreetbets、r/stocks、r/investing 讨论 | 低（常被 403 拦截，降级继续） |
+| **DeepSeek / OpenAI 等 LLM** | 多空辩论、综合倾向 | 低（同标的两次可能不同） |
+
+#### 为什么慢？
+
+TradingAgents 默认串行跑 **4 个分析师 + 多空辩论 + 交易员 + 三方风险辩论 + 投资组合经理**，每步都要等网络拉数 + LLM 推理（单次 10～60 秒）。完整一次分析通常 **5～20 分钟**，默认超时 `ANALYSIS_TIMEOUT_SECONDS=1800`（30 分钟）。
+
+Reddit 403 是 TradingAgents 情绪分析师的内置数据源被反爬拦截，**会降级为空数据继续跑**，与超时失败无关。
 
 - 封装代码：`app/providers/tradingagents_client.py`
 - 设计文档：[tradingagents-iteration.md](./tradingagents-iteration.md)
@@ -702,11 +733,19 @@ DEEPSEEK_API_KEY=你的密钥
 
 DeepSeek 使用 OpenAI 兼容 API（endpoint 由 TradingAgents 内置 `https://api.deepseek.com`）。若用 OpenAI，改 `LLM_PROVIDER=openai` 并填 `OPENAI_API_KEY`。
 
+可选调优：
+
+```env
+ANALYSIS_ANALYSTS=market,news,fundamentals  # 逗号分隔；默认去掉 social
+ANALYSIS_MAX_DEBATE_ROUNDS=1        # 多空辩论轮数，越大越慢
+ANALYSIS_TIMEOUT_SECONDS=1800       # 单次分析超时（秒），默认 30 分钟
+```
+
 ### 3. 行为说明
 
 | 事件 | 行为 |
 |------|------|
-| **任意告警推送后** | 自动排队 TradingAgents 分析（1～5 分钟） |
+| **任意告警推送后** | 自动排队 TradingAgents 分析（约 5～20 分钟） |
 | 分析开始 | Telegram 提示「分析排队中…」 |
 | 分析完成 | **摘要消息** + **HTML 报告附件** |
 | `/analyze MSFT` | 手动触发（不依赖告警） |

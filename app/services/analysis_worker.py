@@ -69,6 +69,18 @@ class AnalysisWorker:
                 break
             try:
                 await self._process(job)
+            except TimeoutError:
+                limit_min = self._settings.timeout_seconds // 60
+                logger.exception(
+                    "Analysis timed out for %s after %ss",
+                    job.symbol,
+                    self._settings.timeout_seconds,
+                )
+                await self._notifier.send_text(
+                    f"⚠️ AI 分析超时 `{job.symbol}`\n"
+                    f"已超过 {limit_min} 分钟上限。\n"
+                    "可在 `.env` 调大 `ANALYSIS_TIMEOUT_SECONDS` 后重启 Bot。",
+                )
             except Exception:
                 logger.exception(
                     "Analysis failed for %s",
@@ -83,9 +95,10 @@ class AnalysisWorker:
 
     async def _process(self, job: AnalysisJob) -> None:
         trigger_label = job.trigger.value
+        limit_min = max(3, self._settings.timeout_seconds // 60)
         await self._notifier.send_text(
             f"🧠 分析排队中… `{job.symbol}` · {job.snapshot.interval}\n"
-            f"触发：{trigger_label} · 预计 1～5 分钟",
+            f"触发：{trigger_label} · 预计 3～{limit_min} 分钟",
         )
 
         result = await asyncio.wait_for(

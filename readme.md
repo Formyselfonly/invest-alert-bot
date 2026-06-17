@@ -422,7 +422,7 @@ Press `Ctrl+C` to stop.
 | 4 | Bot online | Send `/status` | Full watchlist status |
 | 5 | Single symbol | `/status MSFT` | MSFT per-interval cluster / 200MA |
 | 6 | AI package | `uv run python -c "import tradingagents; print('ok')"` | Prints `ok` (skip if no AI) |
-| 7 | Manual AI | `/analyze MSFT` | “Queued…” → summary + HTML in 1–5 min |
+| 7 | Manual AI | `/analyze MSFT` | “Queued…” → summary + HTML in ~5–20 min |
 | 8 | Alert → AI | Wait for real alert or watch logs | Alert push → auto AI queue (if enabled) |
 
 **Logs:** `logs/app.log` (configure in `config.yaml` → `logging`)
@@ -624,23 +624,54 @@ This repo is a **downstream integration** of [TradingAgents](https://github.com/
 |---|--------------------------|------------------------------|
 | Role | Multi-agent LLM financial research framework | 24/7 MA monitor + Telegram alert bot |
 | Trigger | CLI / manual `propagate(ticker, date)` | **Auto-queue on every alert** + `/analyze` |
-| Latency | Minutes | Alerts in seconds; AI async 1–5 min |
+| Latency | Minutes | Alerts in seconds; AI async 5–20 min |
 | Core logic | Fundamentals, sentiment, news, debate | **Rule-based MAs** (cluster + 200MA) |
 | Install | `pip install tradingagents` | `uv sync --extra analysis` |
 
 ### Where TradingAgents runs in this project
 
+**Division of labor:** the bot answers “when to look” (second-level rule alerts); TradingAgents answers “how to read it / is it worth acting on” (multi-agent research over minutes). Moving averages remain the **only automatic alert source** — AI does not change thresholds or place orders.
+
+#### End-to-end flow
+
+```mermaid
+flowchart TD
+    A["Alert push or /analyze MSFT"] --> B["Coordinator picks monitor\nprefers 1d interval"]
+    B --> C["build_snapshot()\nprice + MAs + alert context"]
+    C --> D["AnalysisWorker background queue\ndoes not block Binance WS"]
+    D --> E["TradingAgentsClient.run()\nsync in thread pool"]
+    E --> F["build_briefing()\ninject bot MA snapshot"]
+    F --> G["TradingAgentsGraph.propagate(ticker, date)"]
+
+    G --> H1["Market Analyst\nyfinance OHLCV + indicators + LLM"]
+    H1 --> H2["Sentiment Analyst\nnews + StockTwits + Reddit + LLM"]
+    H2 --> H3["News Analyst\nnews + macro + insider trades + LLM"]
+    H3 --> H4["Fundamentals Analyst\nfinancials + LLM"]
+    H4 --> I["Bull ↔ Bear debate\nANALYSIS_MAX_DEBATE_ROUNDS"]
+    I --> J["Research Manager + Trader + LLM"]
+    J --> K["Aggressive / Conservative / Neutral risk debate + LLM"]
+    K --> L["Portfolio Manager\nBUY / HOLD / SELL + LLM"]
+
+    L --> M["Merge bot snapshot + decision text"]
+    M --> N["write_html_report() → reports/"]
+    N --> O["Telegram summary + HTML attachment"]
 ```
-Telegram alert
-       ↓
-AnalysisWorker queue
-       ↓
-app/providers/tradingagents_client.py
-       ↓
-TradingAgentsGraph.propagate(ticker, date)
-       ↓
-Telegram summary + reports/*.html attachment
-```
+
+#### What the result depends on
+
+| Source | Content | Determinism |
+|--------|---------|-------------|
+| **Invest Alert Bot** | Price, MA20/60/120/200, cluster width, 200MA distance, alert type | High (live kline math) |
+| **TradingAgents / yfinance** | OHLCV, MACD/RSI, fundamentals, news | Medium (external API) |
+| **TradingAgents / StockTwits** | Retail Bullish/Bearish sentiment | Medium |
+| **TradingAgents / Reddit** | r/wallstreetbets, r/stocks, r/investing posts | Low (often 403-blocked; degrades gracefully) |
+| **DeepSeek / OpenAI LLM** | Debate, synthesis, final stance | Low (non-deterministic) |
+
+#### Why it takes so long
+
+TradingAgents runs **4 analysts + bull/bear debate + trader + three-way risk debate + portfolio manager** in sequence. Each step waits on data fetches and LLM calls (often 10–60s each). A full run is typically **5–20 minutes**. Default timeout: `ANALYSIS_TIMEOUT_SECONDS=1800` (30 minutes).
+
+Reddit 403 errors come from TradingAgents’ built-in sentiment data source being blocked — analysis **continues with degraded social data** and is unrelated to timeout failures.
 
 - Wrapper: `app/providers/tradingagents_client.py`
 - Design doc: [tradingagents-iteration.md](./tradingagents-iteration.md)
@@ -691,11 +722,19 @@ DEEPSEEK_API_KEY=your_key
 
 DeepSeek uses OpenAI-compatible API (endpoint built into TradingAgents). For OpenAI: `LLM_PROVIDER=openai` + `OPENAI_API_KEY`.
 
+Optional tuning:
+
+```env
+ANALYSIS_ANALYSTS=market,news,fundamentals  # comma-separated; default omits social
+ANALYSIS_MAX_DEBATE_ROUNDS=1        # debate rounds; higher = slower
+ANALYSIS_TIMEOUT_SECONDS=1800       # per-run timeout (seconds); default 30 min
+```
+
 ### 3. Behavior
 
 | Event | Behavior |
 |-------|----------|
-| **After any alert** | Auto-queue TradingAgents analysis (1–5 min) |
+| **After any alert** | Auto-queue TradingAgents analysis (~5–20 min) |
 | Analysis starts | Telegram: “Analysis queued…” |
 | Analysis done | **Summary message** + **HTML report attachment** |
 | `/analyze MSFT` | Manual trigger (no alert required) |

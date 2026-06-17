@@ -32,15 +32,21 @@ class TradingAgentsClient:
         )
 
         briefing = build_briefing(job.snapshot)
+        analysts = list(self._settings.selected_analysts)
         logger.info(
-            "TradingAgents run: %s (%s) trigger=%s",
+            "TradingAgents run: %s (%s) trigger=%s analysts=%s",
             job.ta_ticker,
             job.symbol,
             job.trigger,
+            ",".join(analysts),
         )
         logger.debug("Bot briefing:\n%s", briefing)
 
-        ta = TradingAgentsGraph(debug=False, config=config)
+        ta = TradingAgentsGraph(
+            selected_analysts=analysts,
+            debug=False,
+            config=config,
+        )
         analysis_date = date.today().isoformat()
         started = time.monotonic()
         raw_state, decision = ta.propagate(job.ta_ticker, analysis_date)
