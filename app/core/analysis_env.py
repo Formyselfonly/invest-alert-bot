@@ -1,4 +1,7 @@
-"""Environment-backed settings for TradingAgents analysis."""
+"""Environment-backed settings for TradingAgents analysis.
+Author: Shijie Zheng (Kerry Zheng) — https://github.com/Formyselfonly
+Repository: https://github.com/Formyselfonly/invest-alert-bot
+"""
 
 from __future__ import annotations
 

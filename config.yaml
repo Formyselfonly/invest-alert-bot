@@ -1,3 +1,5 @@
+# invest-alert-bot — Author: Shijie Zheng (Kerry Zheng)
+# https://github.com/Formyselfonly/invest-alert-bot
 telegram:
   bot_token: "${TELEGRAM_BOT_TOKEN}"
   chat_id: "${TELEGRAM_CHAT_ID}"

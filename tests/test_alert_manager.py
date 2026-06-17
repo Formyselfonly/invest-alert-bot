@@ -1,4 +1,7 @@
-"""Tests for alert cooldown and deduplication."""
+"""Tests for alert cooldown and deduplication.
+Author: Shijie Zheng (Kerry Zheng) — https://github.com/Formyselfonly
+Repository: https://github.com/Formyselfonly/invest-alert-bot
+"""
 
 from datetime import UTC, datetime
 

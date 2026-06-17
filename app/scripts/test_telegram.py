@@ -1,4 +1,7 @@
-"""Send a test message to verify Telegram credentials."""
+"""Send a test message to verify Telegram credentials.
+Author: Shijie Zheng (Kerry Zheng) — https://github.com/Formyselfonly
+Repository: https://github.com/Formyselfonly/invest-alert-bot
+"""
 
 from __future__ import annotations
 

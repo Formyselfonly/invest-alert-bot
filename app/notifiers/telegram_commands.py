@@ -1,4 +1,7 @@
-"""Interactive Telegram command handlers with menu & buttons."""
+"""Interactive Telegram command handlers with menu & buttons.
+Author: Shijie Zheng (Kerry Zheng) — https://github.com/Formyselfonly
+Repository: https://github.com/Formyselfonly/invest-alert-bot
+"""
 
 from __future__ import annotations
 

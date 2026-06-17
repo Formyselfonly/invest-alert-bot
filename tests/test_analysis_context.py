@@ -1,4 +1,7 @@
-"""Tests for TradingAgents symbol mapping."""
+"""Tests for TradingAgents symbol mapping.
+Author: Shijie Zheng (Kerry Zheng) — https://github.com/Formyselfonly
+Repository: https://github.com/Formyselfonly/invest-alert-bot
+"""
 
 from app.services.analysis_context import to_tradingagents_ticker
 

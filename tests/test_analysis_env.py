@@ -1,4 +1,7 @@
-"""Tests for analysis environment parsing."""
+"""Tests for analysis environment parsing.
+Author: Shijie Zheng (Kerry Zheng) — https://github.com/Formyselfonly
+Repository: https://github.com/Formyselfonly/invest-alert-bot
+"""
 
 from app.core.analysis_env import _DEFAULT_ANALYSTS, parse_selected_analysts
 

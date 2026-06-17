@@ -1,4 +1,7 @@
-"""Assemble TradingAgents graph state into human-readable report text."""
+"""Assemble TradingAgents graph state into human-readable report text.
+Author: Shijie Zheng (Kerry Zheng) — https://github.com/Formyselfonly
+Repository: https://github.com/Formyselfonly/invest-alert-bot
+"""
 
 from __future__ import annotations
 

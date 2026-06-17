@@ -1,4 +1,7 @@
-"""MA/EMA calculation and alert trigger detection."""
+"""MA/EMA calculation and alert trigger detection.
+Author: Shijie Zheng (Kerry Zheng) — https://github.com/Formyselfonly
+Repository: https://github.com/Formyselfonly/invest-alert-bot
+"""
 
 from __future__ import annotations
 

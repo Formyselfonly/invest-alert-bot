@@ -1,4 +1,7 @@
-"""Map bot symbols to TradingAgents tickers and build snapshots."""
+"""Map bot symbols to TradingAgents tickers and build snapshots.
+Author: Shijie Zheng (Kerry Zheng) — https://github.com/Formyselfonly
+Repository: https://github.com/Formyselfonly/invest-alert-bot
+"""
 
 from __future__ import annotations
 

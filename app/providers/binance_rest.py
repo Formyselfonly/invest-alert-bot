@@ -1,4 +1,7 @@
-"""Binance REST client for historical klines."""
+"""Binance REST client for historical klines.
+Author: Shijie Zheng (Kerry Zheng) — https://github.com/Formyselfonly
+Repository: https://github.com/Formyselfonly/invest-alert-bot
+"""
 
 from __future__ import annotations
 

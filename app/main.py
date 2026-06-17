@@ -1,4 +1,7 @@
-"""Invest Alert Bot entry point."""
+"""Invest Alert Bot entry point.
+Author: Shijie Zheng (Kerry Zheng) — https://github.com/Formyselfonly
+Repository: https://github.com/Formyselfonly/invest-alert-bot
+"""
 
 from __future__ import annotations
 
@@ -68,3 +71,8 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+# -----------------------------------------------------------------------------
+# invest-alert-bot · Author: Shijie Zheng (Kerry Zheng)
+# https://github.com/Formyselfonly · https://github.com/Formyselfonly/invest-alert-bot
+# -----------------------------------------------------------------------------

@@ -1,4 +1,7 @@
-"""Format and send Telegram alert messages."""
+"""Format and send Telegram alert messages.
+Author: Shijie Zheng (Kerry Zheng) — https://github.com/Formyselfonly
+Repository: https://github.com/Formyselfonly/invest-alert-bot
+"""
 
 from __future__ import annotations
 

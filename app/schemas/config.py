@@ -1,3 +1,9 @@
+"""Invest Alert Bot module.
+
+Author: Shijie Zheng (Kerry Zheng) — https://github.com/Formyselfonly
+Repository: https://github.com/Formyselfonly/invest-alert-bot
+"""
+
 from pydantic import BaseModel, Field
 
 from app.schemas.market import DataSource

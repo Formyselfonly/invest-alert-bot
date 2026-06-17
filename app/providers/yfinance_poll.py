@@ -1,4 +1,7 @@
-"""Equity OHLCV via Yahoo Finance (NASDAQ / NYSE listed symbols)."""
+"""Equity OHLCV via Yahoo Finance (NASDAQ / NYSE listed symbols).
+Author: Shijie Zheng (Kerry Zheng) — https://github.com/Formyselfonly
+Repository: https://github.com/Formyselfonly/invest-alert-bot
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,7 @@
-"""Tests for MA/EMA engine and trigger logic."""
+"""Tests for MA/EMA engine and trigger logic.
+Author: Shijie Zheng (Kerry Zheng) — https://github.com/Formyselfonly
+Repository: https://github.com/Formyselfonly/invest-alert-bot
+"""
 
 from datetime import UTC, datetime
 

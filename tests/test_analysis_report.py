@@ -1,4 +1,7 @@
-"""Tests for TradingAgents report assembly."""
+"""Tests for TradingAgents report assembly.
+Author: Shijie Zheng (Kerry Zheng) — https://github.com/Formyselfonly
+Repository: https://github.com/Formyselfonly/invest-alert-bot
+"""
 
 from app.services.analysis_report import compose_decision_text, extract_summary_excerpt
 

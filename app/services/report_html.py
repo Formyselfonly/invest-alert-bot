@@ -1,4 +1,7 @@
-"""Render TradingAgents output as HTML for Telegram attachment."""
+"""Render TradingAgents output as HTML for Telegram attachment.
+Author: Shijie Zheng (Kerry Zheng) — https://github.com/Formyselfonly
+Repository: https://github.com/Formyselfonly/invest-alert-bot
+"""
 
 from __future__ import annotations
 

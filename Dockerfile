@@ -1,3 +1,5 @@
+# invest-alert-bot — Author: Shijie Zheng (Kerry Zheng)
+# https://github.com/Formyselfonly/invest-alert-bot
 FROM python:3.12-slim
 
 WORKDIR /app

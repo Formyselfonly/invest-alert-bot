@@ -1,4 +1,7 @@
-"""Alert cooldown and deduplication."""
+"""Alert cooldown and deduplication.
+Author: Shijie Zheng (Kerry Zheng) — https://github.com/Formyselfonly
+Repository: https://github.com/Formyselfonly/invest-alert-bot
+"""
 
 from __future__ import annotations
 
