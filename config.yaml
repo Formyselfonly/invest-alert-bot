@@ -70,7 +70,7 @@ thresholds:
   touch: 0.012     # 触碰告警：1.2%
 
 alert:
-  cooldown_seconds: 3600
+  cooldown_seconds: 14400   # 4 小时：同一 (symbol, interval, alert_type) 不重复推送
   dedupe_window_seconds: 60
 
 polling:

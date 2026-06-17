@@ -176,7 +176,7 @@ flowchart TB
 | Orchestration | `coordinator.py` | Init monitors, wire data sources, route tick/kline updates |
 | Monitor | `symbol_monitor.py` | Per `symbol × interval`: bars, indicators, live price |
 | Engine | `engine.py` | Pandas MA/EMA; cluster & touch detection |
-| Alerts | `alert_manager.py` | 1h cooldown + 60s debounce per `(symbol, interval, type)` |
+| Alerts | `alert_manager.py` | 4h cooldown + 60s debounce per `(symbol, interval, type)` |
 | Market data | `providers/` | Binance REST/WS, Yahoo polling |
 | Analysis | `analysis_worker.py` | Async queue → TradingAgents → Telegram summary + HTML |
 | Notify | `notifiers/` | Telegram alerts & commands |
@@ -286,7 +286,7 @@ flowchart TB
     end
 
     CE & AE1 --> AM["AlertManager.should_send()"]
-    AM --> COOL{"≥ 1h since last<br/>same-type alert?"}
+    AM --> COOL{"≥ 4h since last<br/>same-type alert?"}
     COOL -->|No| END
     COOL -->|Yes| DEDUP{"60s debounce?"}
     DEDUP -->|Duplicate| END
@@ -315,7 +315,7 @@ Trigger: touch ≤ thresholds.touch (default 1.2%)
 |---------------|--------|
 | Touch on live price | No need to wait for bar close |
 | MAs from closed bars | Current incomplete bar excluded |
-| Cooldown | Default 1 hour per `(symbol, interval, alert_type)` |
+| Cooldown | Default 4 hours per `(symbol, interval, alert_type)` |
 | Debounce | No duplicate send within 60s for same key |
 | In-memory state | No DB; cooldown resets on restart |
 
@@ -595,7 +595,7 @@ Time: 2026-06-16 14:32:08 UTC
 | `symbols` | `config.yaml` | Watchlist |
 | `thresholds.cluster` | `config.yaml` | Default `0.008` (0.8%) |
 | `thresholds.touch` | `config.yaml` | Default `0.012` (1.2%) |
-| `alert.cooldown_seconds` | `config.yaml` | Default `3600` |
+| `alert.cooldown_seconds` | `config.yaml` | Default `14400` (4 hours) |
 
 ---
 

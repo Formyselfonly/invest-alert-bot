@@ -32,7 +32,7 @@ class ThresholdConfig(BaseModel):
 
 
 class AlertConfig(BaseModel):
-    cooldown_seconds: int = 3600
+    cooldown_seconds: int = 14400
     dedupe_window_seconds: int = 60
 
 

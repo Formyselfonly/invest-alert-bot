@@ -277,7 +277,7 @@ flowchart TB
     end
 
     CE & AE1 --> AM["AlertManager.should_send()"]
-    AM --> COOL{"距上次同类型告警<br/>≥ cooldown(1h)?"}
+    AM --> COOL{"距上次同类型告警<br/>≥ cooldown(4h)?"}
     COOL -->|否| END
     COOL -->|是| DEDUP{"60s 防抖窗口?"}
     DEDUP -->|重复| END
@@ -306,7 +306,7 @@ touch = abs(current_price - 200MA) / current_price
 |----------|------|
 | 触碰即触发 | 不等 K 线收盘，实时价一到就判定 |
 | 指标基于闭合 K 线 | MA/EMA 不含当前未闭合 bar |
-| 冷却 | 同一 `(symbol, interval, alert_type)` 默认 1 小时不重复推送 |
+| 冷却 | 同一 `(symbol, interval, alert_type)` 默认 4 小时不重复推送 |
 | 防抖 | 60 秒内同 key 不重复发送 |
 | 纯内存 | 无数据库，重启后冷却状态重置 |
 
@@ -599,7 +599,7 @@ uv run ruff check app tests
 
 - **触碰即触发**，不等 K 线收盘
 - MA/EMA 基于已闭合 K 线计算，实时价用于比较
-- 同一告警默认 **1 小时冷却** + **60 秒防抖**，避免刷屏
+- 同一告警默认 **4 小时冷却** + **60 秒防抖**，避免刷屏
 
 ---
 
@@ -612,7 +612,7 @@ uv run ruff check app tests
 | `symbols` | `config.yaml` | 监控标的列表 |
 | `thresholds.cluster` | `config.yaml` | 密集阈值，默认 0.008 (0.8%) |
 | `thresholds.touch` | `config.yaml` | 200MA 触底阈值，默认 0.012 (1.2%) |
-| `alert.cooldown_seconds` | `config.yaml` | 冷却时间，默认 3600 秒 |
+| `alert.cooldown_seconds` | `config.yaml` | 冷却时间，默认 14400 秒（4 小时） |
 
 ---
 
