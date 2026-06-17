@@ -33,7 +33,7 @@ from app.services.status_format import (
 
 logger = logging.getLogger(__name__)
 
-AlertCallback = Callable[[AlertEvent], Awaitable[None]]
+AlertCallback = Callable[[AlertEvent, "SymbolMonitor"], Awaitable[None]]
 MAX_KLINES = 250
 
 INTERVAL_ORDER = {"4h": 0, "1d": 1, "1wk": 2, "1w": 2}
@@ -213,5 +213,5 @@ class SymbolMonitor:
                 event.alert_type,
                 event.price,
             )
-            await self._on_alert(out)
+            await self._on_alert(out, self)
             self._alert_manager.record_sent(event)

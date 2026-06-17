@@ -28,7 +28,7 @@ YF_INTERVAL_MAP = {
 
 
 def _clean_ohlcv(df: pd.DataFrame) -> pd.DataFrame:
-    """Drop incomplete bars (Yahoo often appends NaN Close for open sessions)."""
+    """Drop incomplete bars (Yahoo NaN Close on open sessions)."""
     required = ["Open", "High", "Low", "Close"]
     cleaned = df.dropna(subset=required)
     return cleaned.loc[cleaned["Close"] > 0]

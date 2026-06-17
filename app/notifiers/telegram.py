@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from telegram import Bot
 from telegram.error import TelegramError
@@ -51,17 +52,39 @@ class TelegramNotifier:
         message = format_alert_message(event)
         await self._send_with_retry(message)
 
+    async def send_text(self, message: str) -> None:
+        await self._send_with_retry(message)
+
+    async def send_analysis_report(
+        self,
+        summary: str,
+        html_path: Path,
+    ) -> None:
+        await self._send_with_retry(summary)
+        with html_path.open("rb") as report_file:
+            await self._bot.send_document(
+                chat_id=self._chat_id,
+                document=report_file,
+                filename=html_path.name,
+                caption="📄 完整 AI 分析报告（HTML）",
+            )
+        logger.info("Telegram analysis report sent: %s", html_path.name)
+
     async def send_startup_message(
         self,
         symbol_count: int,
         skipped: list[str] | None = None,
+        analysis_status: str | None = None,
     ) -> None:
         message = (
             "✅ *Invest Alert Bot 已启动*\n"
             f"监控 *{symbol_count}* 个组合 · 告警分两类推送\n"
-            "📊 均线密集-开仓机会  🎯 200MA 触碰-抄底机会（1D/1W）\n\n"
-            "/status 摘要 · /status BTC 详情 · /clear 清屏"
+            "📊 均线密集-开仓机会  🎯 200MA 触碰-抄底机会\n"
+            "告警后将自动触发 AI 分析（若已启用）\n\n"
+            "/status 摘要 · /status BTC · /analyze MSFT · /clear 清屏"
         )
+        if analysis_status:
+            message += f"\n\n🧠 AI 分析：{analysis_status}"
         if skipped:
             message += f"\n\n⚠️ 跳过 {len(skipped)} 项（K线不足 200 根）"
         await self._send_with_retry(message)

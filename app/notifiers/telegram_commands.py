@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 
 from telegram import BotCommand, KeyboardButton, ReplyKeyboardMarkup, Update
 from telegram.error import TelegramError
@@ -20,6 +20,7 @@ from app.schemas.config import TelegramConfig
 logger = logging.getLogger(__name__)
 
 StatusProvider = Callable[[str | None], str]
+AnalyzeProvider = Callable[[str], Awaitable[str]]
 
 MAX_TRACKED_MESSAGES = 100
 
@@ -27,9 +28,11 @@ WELCOME = (
     "👋 *Invest Alert Bot*\n\n"
     "告警分两类推送：\n"
     "📊 均线密集-开仓机会（20/60/120 MA+EMA）\n"
-    "🎯 200MA 触碰-抄底机会（1D / 1W）\n\n"
+    "🎯 200MA 触碰-抄底机会（1D / 1W）\n"
+    "告警后自动 AI 分析（需启用）\n\n"
     "/status — 全部监控状态\n"
     "/status BTC — 单标的\n"
+    "/analyze MSFT — 手动 AI 分析\n"
     "/clear — 清屏"
 )
 
@@ -41,6 +44,7 @@ HELP = (
     "*命令*\n"
     "/status — 展示全部标的 × 周期\n"
     "/status BTC — 只看单个标的\n"
+    "/analyze MSFT — 手动 AI 深度分析\n"
     "/clear — 清屏\n"
     "/help — 本说明"
 )
@@ -48,6 +52,7 @@ HELP = (
 BOT_COMMANDS = [
     BotCommand("start", "开始使用"),
     BotCommand("status", "全部监控状态"),
+    BotCommand("analyze", "AI 深度分析"),
     BotCommand("clear", "清屏"),
     BotCommand("help", "帮助说明"),
 ]
@@ -64,9 +69,11 @@ class TelegramCommandBot:
         self,
         config: TelegramConfig,
         status_provider: StatusProvider,
+        analyze_provider: AnalyzeProvider | None = None,
     ) -> None:
         self._chat_id = int(config.chat_id)
         self._status_provider = status_provider
+        self._analyze_provider = analyze_provider
         self._tracked_message_ids: list[int] = []
         self._application = (
             Application.builder()
@@ -81,6 +88,9 @@ class TelegramCommandBot:
         )
         self._application.add_handler(
             CommandHandler("status", self._cmd_status),
+        )
+        self._application.add_handler(
+            CommandHandler("analyze", self._cmd_analyze),
         )
         self._application.add_handler(
             CommandHandler("clear", self._cmd_clear),
@@ -155,6 +165,31 @@ class TelegramCommandBot:
             return
         symbol = " ".join(context.args) if context.args else None
         await self._send_status(update.message, symbol)
+
+    async def _cmd_analyze(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+    ) -> None:
+        if not self._authorized(update) or update.message is None:
+            return
+        if self._analyze_provider is None:
+            await update.message.reply_text("AI 分析未配置")
+            return
+        if not context.args:
+            await update.message.reply_text(
+                "用法：`/analyze MSFT` 或 `/analyze BTC`",
+                parse_mode="Markdown",
+            )
+            return
+        symbol = " ".join(context.args)
+        body = await self._analyze_provider(symbol)
+        sent = await update.message.reply_text(
+            body,
+            parse_mode="Markdown",
+            reply_markup=self._reply_keyboard(),
+        )
+        self._track_message(sent.message_id)
 
     async def _cmd_clear(
         self,

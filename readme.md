@@ -2,7 +2,9 @@
 
 一个基于 Python 的高频、低延迟行情监控与告警系统，专注于**均线簇密集度检测**与**关键均线触碰提醒**。满足条件时通过 Telegram 即时推送，辅助交易决策。
 
-> 当前版本：**v0.1.0** — 混合数据源（Binance 合约 + Nasdaq/Yahoo）+ Telegram 推送
+**v0.2 起可选接入 [TradingAgents](https://github.com/TauricResearch/TradingAgents)**：均线规则负责「何时提醒」，TradingAgents 多智能体负责「告警后深度解读」。
+
+> 当前版本：**v0.2** — 混合数据源 + Telegram 告警 + 可选 TradingAgents AI 分析
 
 ---
 
@@ -29,6 +31,7 @@
 | **Nasdaq / Yahoo** | 美股、黄金（GC=F）历史 K 线 + 轮询现价 | ✅ |
 | **Telegram 推送** | 触碰即触发，冷却 + 防抖 | ✅ |
 | **动态配置** | `config.yaml` 管理交易对 | ✅ |
+| **AI 深度解读** | 告警后自动 TradingAgents 分析（可选） | ✅ |
 | **数据库** | 无（v1 纯内存，重启后冷却重置） | — |
 
 ---
@@ -46,15 +49,9 @@
 
 > **4H 不做 200MA 触底**；**不看 200EMA**。
 
-**当前 11 个标的**（详见 `config.yaml`）：
+**当前 13 个标的**（详见 `config.yaml`）：Crypto 5 个 + 美股/ETF/黄金 8 个。
 
-| 类别 | 标的 | 数据源 |
-|------|------|--------|
-| 加密货币 | BTC、ETH、SOL、BNB、HYPE | Binance 合约 |
-| 美股 | MSFT、NVDA、MSTR、GOOGL、CRCL | `source: nasdaq`（Yahoo） |
-| 黄金 | XAU（ticker: GC=F） | `source: nasdaq`（Yahoo） |
-
-启动时需 **≥200 根 K 线** 才启用该周期；不足则跳过（如 HYPE 1W、CRCL 1W）。正常约 **31/33** 活跃。
+启动时需 **≥200 根 K 线** 才启用该周期；不足则跳过（如 HYPE 1W、CRCL 1W）。正常约 **37/39** 活跃。
 
 ---
 
@@ -315,6 +312,124 @@ touch = abs(current_price - 200MA) / current_price
 
 ---
 
+## 完整流程：安装 → 启动 → 验证
+
+本项目是**单进程** Bot（不是 Web API）：一个命令同时跑 **行情监控 + Telegram 命令 +（可选）AI 分析**。
+
+### 流程总览
+
+```mermaid
+flowchart TB
+    subgraph Setup["一次性准备"]
+        A1["安装 uv + clone 项目"]
+        A2["cp .env.example → .env<br/>填 TELEGRAM_*"]
+        A3["可选: uv sync --extra analysis<br/>填 DEEPSEEK_API_KEY"]
+    end
+
+    subgraph Start["启动 app.main"]
+        B1["加载 config.yaml + .env"]
+        B2["拉历史 K 线 → 初始化 Monitor"]
+        B3["Binance WS + Yahoo 轮询"]
+        B4["Telegram 命令 Bot 上线"]
+        B5["可选: Analysis Worker 后台队列"]
+    end
+
+    subgraph Runtime["运行中"]
+        C1["价格更新 → 算均线 → 判告警"]
+        C2["Telegram 推送告警"]
+        C3["每条告警 → 排队 AI 分析"]
+        C4["分析完成 → 摘要 + HTML 附件"]
+    end
+
+    A1 --> A2 --> A3 --> B1
+    B1 --> B2 --> B3 --> B4 --> B5
+    B5 --> C1 --> C2 --> C3 --> C4
+```
+
+### 第一步：安装依赖
+
+```bash
+cd invest-alert-bot
+
+# 基础功能（监控 + 告警，必装）
+uv sync
+
+# 若要 AI 分析（TradingAgents + DeepSeek），额外执行：
+uv sync --extra analysis
+```
+
+> **别忘**：只用 `uv sync` 也能正常监控告警；**没装 `--extra analysis` 就没有 AI**，启动消息会提示「未安装」。
+
+### 第二步：配置环境
+
+```bash
+cp .env.example .env
+```
+
+**最少必填**（监控告警）：
+
+```env
+TELEGRAM_BOT_TOKEN=你的BotFather令牌
+TELEGRAM_CHAT_ID=你的数字ID
+```
+
+**若要 AI 分析**，在 `.env` 再加：
+
+```env
+ANALYSIS_ENABLED=true
+LLM_PROVIDER=deepseek
+DEEPSEEK_API_KEY=你的DeepSeek密钥
+```
+
+DeepSeek 的 API 地址由 TradingAgents 包内置（`https://api.deepseek.com`），一般**不用**自己配 base URL。监控标的与阈值改 `config.yaml`。
+
+### 第三步：启动
+
+```bash
+uv run python -m app.main
+```
+
+**成功标志：**
+
+1. 终端无报错，日志类似：
+   - `Coordinator started with XX monitors`
+   - `Binance futures WS started`
+   - `Equity poller started: MSFT ...`
+   - `Analysis worker started`（若启用 AI）
+2. Telegram 收到启动消息，含监控数量与 `🧠 AI 分析：已启用 (deepseek)` 等状态
+3. 发 `/start` 或 `/status` 有回复
+
+按 `Ctrl+C` 停止。
+
+### 第四步：验证（推荐顺序）
+
+| # | 验证项 | 命令 / 操作 | 预期结果 |
+|---|--------|-------------|----------|
+| 1 | 单元测试 | `uv run pytest tests/ -v` | 全部 PASS |
+| 2 | 代码检查 | `uv run ruff check app tests` | 无 error |
+| 3 | Telegram 连通 | `uv run python -m app.scripts.test_telegram` | 收到测试消息 |
+| 4 | Bot 在线 | Telegram 发 `/status` | 返回全部标的监控数据 |
+| 5 | 单标的 | `/status MSFT` | 返回 MSFT 各周期密集/200MA |
+| 6 | AI 包已装 | `uv run python -c "import tradingagents; print('ok')"` | 打印 `ok`（未装 AI 可跳过） |
+| 7 | 手动 AI | `/analyze MSFT` | 「分析排队中…」→ 1～5 分钟后摘要 + HTML 附件 |
+| 8 | 告警链路 | 等真实告警或观察日志 `Alert triggered` | 告警推送 → 自动排队 AI（若启用） |
+
+**日志位置**：`logs/app.log`（可在 `config.yaml` 的 `logging` 段调整）。
+
+**AI 报告位置**：`reports/report_*.html`（Telegram 也会发同名附件）。
+
+### 常见问题
+
+| 现象 | 原因 | 处理 |
+|------|------|------|
+| 启动报 `TELEGRAM_* missing` | `.env` 未填 | 按 `.env.example` 补全 |
+| AI 显示「未安装」 | 没跑 `uv sync --extra analysis` | 执行后重启 |
+| AI 显示「未启用」 | `ANALYSIS_ENABLED=false` | 改为 `true` 并填 `DEEPSEEK_API_KEY` |
+| `/status` 有 `nan%` | Yahoo 未收盘 K 线（已修复） | 更新代码并重启 |
+| 部分周期被跳过 | K 线不足 200 根 | 看启动日志 `Skip monitor`，属正常 |
+
+---
+
 ## 快速开始
 
 ### 第一步：创建 Telegram Bot（只需做一次）
@@ -387,8 +502,9 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 git clone https://github.com/your-org/invest-alert-bot.git
 cd invest-alert-bot
 
-# 安装依赖
+# 安装依赖（见上方「完整流程」；要 AI 则加 --extra analysis）
 uv sync
+# uv sync --extra analysis
 ```
 
 编辑 `config.yaml`，配置要监控的标的：
@@ -421,12 +537,7 @@ thresholds:
 
 ## 怎么运行？（没有 FastAPI）
 
-本项目**不是 Web API**，没有 FastAPI / HTTP 服务。
-
-只需要跑**一个 Python 进程**，它同时做两件事：
-
-1. **监控行情**（Binance WebSocket + Yahoo 轮询 + 指标计算）
-2. **Telegram Bot**（推送告警 + 响应 `/start` 等命令）
+本项目**不是 Web API**。启动与验证步骤见上方 **[完整流程：安装 → 启动 → 验证](#完整流程安装--启动--验证)**。
 
 ```bash
 uv run python -m app.main
@@ -436,49 +547,27 @@ uv run python -m app.main
 
 ---
 
-### 第三步：运行
-
-```bash
-uv run python -m app.main
-```
-
-启动成功后，Telegram 会收到一条消息：
-
-```
-✅ Invest Alert Bot 已启动
-正在监控 6 个标的 × 周期组合
-触碰条件时将即时推送告警。
-```
-
-**Telegram 命令**（程序运行中可用）：
-
-| 方式 | 说明 |
-|------|------|
-| 输入 `/` | 命令菜单（start / status / clear / help） |
-| 底部按钮 | 📡 监控摘要 · 🧹 清屏 · ❓ 帮助 |
+### Telegram 命令（运行中）
 
 | 命令 | 作用 |
 |------|------|
-| `/status` | **全部**标的 × 周期（密集 / 200线 分块） |
-| `/status BTC` | 只看单个标的 |
-| `/clear` | 清屏（告警推送不删） |
+| `/start` | 欢迎与按钮菜单 |
+| `/status` | 全部标的 × 周期 |
+| `/status BTC` | 单标的 |
+| `/analyze MSFT` | 手动 AI 深度分析（需启用 AI） |
+| `/clear` | 清屏（不删告警） |
 | `/help` | 帮助 |
 
-**告警推送**分两类标题：`📊 【均线密集-开仓机会】` 与 `🎯 【200MA 触碰-抄底机会】`（仅 1D/1W）。
+**告警推送**：`📊 【均线密集-开仓机会】` / `🎯 【200MA 触碰-抄底机会】`  
+**告警后**（若启用 AI）：自动 `🧠 分析排队中…` → 摘要 + HTML 附件。
 
-> 若更新后 `/` 菜单没出现：重启 `app.main`，并关闭 Telegram 对话重新打开。
-
-> 若只想验证 Telegram 配置（不启动监控），可运行：
->
-> ```bash
-> uv run python -m app.scripts.test_telegram
-> ```
+> 若只想验证 Telegram（不启动监控）：`uv run python -m app.scripts.test_telegram`
 
 按 `Ctrl+C` 停止。
 
 ---
 
-### 第四步：测试
+### 单元测试
 
 ```bash
 uv run pytest tests/ -v
@@ -542,12 +631,128 @@ docker run -d \
 
 ---
 
+## 与 TradingAgents 的关系
+
+本项目是 **[TradingAgents](https://github.com/TauricResearch/TradingAgents)** 的**下游集成项目**（consumer / integration），不是 TradingAgents 官方仓库的分叉。
+
+| | TradingAgents（上游） | Invest Alert Bot（本项目） |
+|---|----------------------|---------------------------|
+| 定位 | 多智能体 LLM 金融研究框架 | 7×24 均线监控 + Telegram 告警 Bot |
+| 触发方式 | CLI / 代码手动 `propagate(ticker, date)` | **每条告警自动排队** + `/analyze` 手动 |
+| 延迟 | 分钟级 | 告警秒级；AI 分析异步 1～5 分钟 |
+| 核心逻辑 | 基本面 / 情绪 / 新闻 / 多空辩论 | **规则化均线**（密集 + 200MA） |
+| 接入方式 | Python 包 `tradingagents` | `uv sync --extra analysis` |
+
+### 本项目中 TradingAgents 用在哪
+
+```
+告警推送 (Telegram)
+       ↓
+AnalysisWorker 队列
+       ↓
+app/providers/tradingagents_client.py
+       ↓
+TradingAgentsGraph.propagate(ticker, date)   # 官方 API
+       ↓
+Telegram 摘要 + reports/*.html 附件
+```
+
+- 封装代码：`app/providers/tradingagents_client.py`
+- 设计文档：[tradingagents-iteration.md](./tradingagents-iteration.md)
+- LLM 默认：`LLM_PROVIDER=deepseek`（亦支持 OpenAI 等 TradingAgents 已支持 provider）
+
+### 引用 TradingAgents 论文
+
+若在 README / 简历 / 其他文档中引用上游框架，可使用：
+
+```bibtex
+@misc{xiao2025tradingagentsmultiagentsllmfinancial,
+      title={TradingAgents: Multi-Agents LLM Financial Trading Framework},
+      author={Yijia Xiao and Edward Sun and Di Luo and Wei Wang},
+      year={2025},
+      eprint={2412.20138},
+      archivePrefix={arXiv},
+      primaryClass={q-fin.TR},
+      url={https://arxiv.org/abs/2412.20138},
+}
+```
+
+### 如何与 TradingAgents 官方建立关联（让你项目「被看见」）
+
+你**不必**把整个 Bot 合进 TradingAgents 才能建立关系。常见做法从易到难：
+
+| 方式 | 做什么 | 适合场景 |
+|------|--------|----------|
+| **1. 本 README + Star** | 保留本文「与 TradingAgents 的关系」并 Star 上游仓库 | 最低成本，简历/作品集可写「基于 TradingAgents」 |
+| **2. 开 Issue（Showcase）** | 到 [TradingAgents Issues](https://github.com/TauricResearch/TradingAgents/issues) 发 **Showcase / Integration** 帖，标题如 `Showcase: Invest Alert Bot — alert-driven Telegram + TradingAgents`，附上本仓库链接与架构说明 | **最推荐**：不改上游代码，官方和社区能看到你的用例 |
+| **3. 提 PR（文档/示例）** | 向上游提 **小 PR**：例如在 `README.md` 增加 “Community Projects” 一行链到你 repo；或 `examples/alert_bot_integration.md` 写 50 行「如何用 propagate 接告警 Bot」 | 你有精力且 PR 只改文档/示例时 |
+| **4. Discord / 社区** | TradingAgents README 里有 [Discord](https://github.com/TauricResearch/TradingAgents) 链接，可在 `#showcase` 或等价频道分享 | 快速曝光 |
+| **5. 不建议** | 把 invest-alert-bot 整仓 PR 进 TradingAgents | 体量大、职责不同，维护者一般不会合 |
+
+**Issue 模板示例**（复制到 TradingAgents 仓库 New Issue）：
+
+```markdown
+## Showcase: Invest Alert Bot (alert-driven integration)
+
+- **Repo**: https://github.com/Formyselfonly/invest-alert-bot
+- **What**: 7×24 MA cluster / 200MA touch alerts via Telegram; **every alert auto-enqueues** TradingAgents analysis; delivers summary + HTML report.
+- **Integration**: `pip`/uv optional extra → `TradingAgentsGraph.propagate()` in async worker; DeepSeek/OpenAI via official provider config.
+- **Why useful**: Shows event-driven (not CLI-only) use of TradingAgents on real watchlists (crypto + US equities + gold).
+
+Happy to adjust docs or add a minimal example PR if maintainers are interested.
+```
+
+若上游接受 **Community Projects** 列表，你的项目就会出现在他们的 README 里，关联最强。
+
+---
+
+## 启用 AI 分析（TradingAgents）
+
+> **重要**：不安装 AI 依赖时，监控与告警 **完全正常**；只有 AI 深度解读不会运行。
+
+### 1. 安装可选依赖
+
+```bash
+uv sync --extra analysis
+```
+
+### 2. 配置 `.env`
+
+复制 `.env.example` 中 **AI 分析** 段落，至少设置：
+
+```env
+ANALYSIS_ENABLED=true
+LLM_PROVIDER=deepseek
+DEEPSEEK_API_KEY=你的密钥
+```
+
+DeepSeek 使用 OpenAI 兼容 API（endpoint 由 TradingAgents 内置 `https://api.deepseek.com`）。若用 OpenAI，改 `LLM_PROVIDER=openai` 并填 `OPENAI_API_KEY`。
+
+### 3. 行为说明
+
+| 事件 | 行为 |
+|------|------|
+| **任意告警推送后** | 自动排队 TradingAgents 分析（1～5 分钟） |
+| 分析开始 | Telegram 提示「分析排队中…」 |
+| 分析完成 | **摘要消息** + **HTML 报告附件** |
+| `/analyze MSFT` | 手动触发（不依赖告警） |
+
+报告 HTML 保存在本地 `reports/` 目录，Telegram 中点击附件可在浏览器打开全文。
+
+启动消息会显示：`🧠 AI 分析：已启用 (deepseek)` 或 `未启用` / `未安装`。
+
+详见 [tradingagents-iteration.md](./tradingagents-iteration.md)。
+
+---
+
 ## 文档
 
 | 文档 | 说明 |
 |------|------|
 | [prd.md](./prd.md) | 产品需求、验收标准 |
 | [plan.md](./plan.md) | 开发计划、模块设计 |
+| [tradingagents-iteration.md](./tradingagents-iteration.md) | TradingAgents 接入设计与路线图 |
+| [TradingAgents 上游](https://github.com/TauricResearch/TradingAgents) | 官方多智能体框架仓库 |
 
 ---
 

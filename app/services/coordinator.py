@@ -7,14 +7,22 @@ import logging
 
 import aiohttp
 
+from app.core.analysis_env import AnalysisEnv
 from app.notifiers.telegram import TelegramNotifier
 from app.providers.binance_rest import BinanceRestClient, to_binance_symbol
 from app.providers.binance_ws import BinanceWebSocketManager
 from app.providers.yfinance_poll import YahooFinancePoller
 from app.schemas.alert import AlertEvent
+from app.schemas.analysis import AnalysisJob, AnalysisTrigger
 from app.schemas.config import AppConfig, SymbolConfig
 from app.schemas.market import DataSource, Kline, Tick
 from app.services.alert_manager import AlertManager
+from app.services.analysis_context import (
+    build_snapshot,
+    find_symbol_config,
+    to_tradingagents_ticker,
+)
+from app.services.analysis_worker import AnalysisWorker
 from app.services.engine import normalize_interval, supports_touch
 from app.services.status_format import MonitorMetrics, format_pct
 from app.services.symbol_monitor import INTERVAL_ORDER, SymbolMonitor
@@ -27,9 +35,17 @@ STATUS_SYMBOL_SEPARATOR = "─────────────────"
 
 
 class Coordinator:
-    def __init__(self, config: AppConfig, notifier: TelegramNotifier) -> None:
+    def __init__(
+        self,
+        config: AppConfig,
+        notifier: TelegramNotifier,
+        analysis_worker: AnalysisWorker | None = None,
+        analysis_env: AnalysisEnv | None = None,
+    ) -> None:
         self._config = config
         self._notifier = notifier
+        self._analysis_worker = analysis_worker
+        self._analysis_env = analysis_env or AnalysisEnv.load()
         self._alert_manager = AlertManager(
             cooldown_seconds=config.alert.cooldown_seconds,
             dedupe_window_seconds=config.alert.dedupe_window_seconds,
@@ -152,9 +168,12 @@ class Coordinator:
             await self._bootstrap_monitors()
             await self._start_binance_streams()
             await self._start_equity_pollers()
+            if self._analysis_worker is not None:
+                await self._analysis_worker.start()
             await self._notifier.send_startup_message(
                 self.monitor_count,
                 self._skipped_monitors,
+                analysis_status=self._analysis_env.status_label,
             )
             logger.info(
                 "Coordinator started with %s monitors (%s skipped)",
@@ -166,6 +185,8 @@ class Coordinator:
             raise
 
     async def stop(self) -> None:
+        if self._analysis_worker is not None:
+            await self._analysis_worker.stop()
         for ws_manager in self._ws_managers:
             await ws_manager.stop()
         for poller in self._yf_pollers:
@@ -306,11 +327,95 @@ class Coordinator:
                 self._yf_pollers.append(poller)
                 await poller.start()
 
-    async def _handle_alert(self, event: AlertEvent) -> None:
+    async def _handle_alert(
+        self,
+        event: AlertEvent,
+        monitor: SymbolMonitor,
+    ) -> None:
         try:
             await self._notifier.send_alert(event)
         except Exception:
             logger.exception("Failed to send alert for %s", event.symbol)
+            return
+
+        await self._enqueue_analysis(event, monitor)
+
+    async def _enqueue_analysis(
+        self,
+        event: AlertEvent,
+        monitor: SymbolMonitor,
+    ) -> None:
+        if self._analysis_worker is None or not self._analysis_worker.enabled:
+            return
+        try:
+            symbol_cfg = find_symbol_config(
+                monitor.symbol,
+                self._config.symbols,
+            )
+            yf_ticker = symbol_cfg.ticker if symbol_cfg else None
+            ta_ticker = to_tradingagents_ticker(monitor.symbol, yf_ticker)
+            snapshot = build_snapshot(monitor, event)
+            job = AnalysisJob(
+                symbol=monitor.symbol,
+                ta_ticker=ta_ticker,
+                snapshot=snapshot,
+                trigger=AnalysisTrigger.ALERT,
+                alert_event=event,
+                requested_at=event.triggered_at,
+            )
+            await self._analysis_worker.enqueue(job)
+        except Exception:
+            logger.exception(
+                "Failed to enqueue analysis for %s",
+                monitor.symbol,
+            )
+
+    def _pick_monitor_for_symbol(self, symbol: str) -> SymbolMonitor | None:
+        candidates = [
+            (iv, mon)
+            for (sym, iv), mon in self._monitors.items()
+            if sym == symbol
+        ]
+        if not candidates:
+            return None
+        preference = {"1d": 0, "1wk": 1, "1w": 1, "4h": 2}
+        candidates.sort(
+            key=lambda item: preference.get(item[0].lower(), 99),
+        )
+        return candidates[0][1]
+
+    async def request_manual_analysis(self, symbol_query: str) -> str:
+        symbol = self._resolve_symbol(symbol_query)
+        if symbol is None:
+            return f"未找到标的 `{symbol_query}`，试试 `/analyze MSFT`"
+
+        if self._analysis_worker is None or not self._analysis_worker.enabled:
+            return (
+                "🧠 AI 分析未启用。\n"
+                "1. `.env` 设置 `ANALYSIS_ENABLED=true`\n"
+                "2. 运行 `uv sync --extra analysis`\n"
+                "3. 配置 `DEEPSEEK_API_KEY` 或 `OPENAI_API_KEY`"
+            )
+
+        monitor = self._pick_monitor_for_symbol(symbol)
+        if monitor is None or monitor.indicators is None:
+            return f"`{symbol}` 暂无可用监控数据"
+
+        symbol_cfg = find_symbol_config(symbol, self._config.symbols)
+        yf_ticker = symbol_cfg.ticker if symbol_cfg else None
+        ta_ticker = to_tradingagents_ticker(symbol, yf_ticker)
+        snapshot = build_snapshot(monitor, alert_event=None)
+        job = AnalysisJob(
+            symbol=symbol,
+            ta_ticker=ta_ticker,
+            snapshot=snapshot,
+            trigger=AnalysisTrigger.MANUAL,
+        )
+        await self._analysis_worker.enqueue(job)
+        return (
+            f"🧠 已加入分析队列：`{symbol}` → `{ta_ticker}`\n"
+            "完成后将推送摘要 + HTML 附件。"
+        )
 
     async def _handle_binance_tick(self, tick: Tick) -> None:
         config_symbol = self._binance_symbol_map.get(tick.symbol)

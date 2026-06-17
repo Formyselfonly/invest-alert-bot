@@ -9,10 +9,16 @@ dependencies = [
     "pandas>=3.0.3",
     "pydantic>=2.13.4",
     "pydantic-settings>=2.14.1",
+    "python-dotenv>=1.1.0",
     "python-telegram-bot>=22.8",
     "pyyaml>=6.0.3",
     "websockets>=16.0",
     "yfinance>=1.4.1",
+]
+
+[project.optional-dependencies]
+analysis = [
+    "tradingagents @ git+https://github.com/TauricResearch/TradingAgents@v0.2.5",
 ]
 
 [dependency-groups]
